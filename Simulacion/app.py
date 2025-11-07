@@ -15,7 +15,7 @@ Si llenas casa/visita te muestra las dos proyecciones.
 """)
 
 # ------------------------------------------------
-# 1. DATOS DE ENTRADA (ahora en blanco)
+# 1. DATOS DE ENTRADA (en blanco)
 # ------------------------------------------------
 st.subheader("Datos del partido")
 
@@ -34,7 +34,7 @@ with col2:
     v_permite_global = st.number_input("Visita: puntos que PERMITE (global)", value=0.0, step=0.1)
 
 # ------------------------------------------------
-# 2. OPCIONAL: CASA / VISITA (también en blanco)
+# 2. OPCIONAL: CASA / VISITA
 # ------------------------------------------------
 st.subheader("Promedios por condición (opcional)")
 
@@ -46,7 +46,6 @@ with c2:
     v_anota_visita = st.number_input("Visita: puntos que ANOTA de visita", value=0.0, step=0.1)
     v_permite_visita = st.number_input("Visita: puntos que PERMITE de visita", value=0.0, step=0.1)
 
-# para saber si sí llenaste casa/visita
 hay_cv = any([
     l_anota_casa > 0,
     l_permite_casa > 0,
@@ -72,10 +71,9 @@ if not af_visita:
     mult_visita = 1.0
 
 # ------------------------------------------------
-# 4. FUNCIÓN DEL MODELO (suavizada)
+# 4. FUNCIÓN DEL MODELO
 # ------------------------------------------------
 def proyeccion_suavizada(ofensiva_propia, defensa_rival, es_local=False):
-    # 55% su ataque + 35% lo que permite el rival + pequeño boost local
     base = 0.55 * ofensiva_propia + 0.35 * defensa_rival
     if es_local:
         base += 1.5
@@ -125,7 +123,7 @@ else:
     st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
 
 # ------------------------------------------------
-# 7. LÍNEA DEL CASINO (también en blanco)
+# 7. LÍNEA DEL CASINO
 # ------------------------------------------------
 st.subheader("Línea real del sportsbook")
 c5, c6 = st.columns(2)
@@ -135,12 +133,10 @@ with c6:
     total_casa = st.number_input("Total (O/U) de la casa", 0.0, 300.0, 0.0, 0.5)
 
 # ------------------------------------------------
-# 8. DIFERENCIAS vs LÍNEA (con signo corregido)
+# 8. DIFERENCIAS vs LÍNEA
 # ------------------------------------------------
 st.subheader("Diferencias vs línea real")
 
-# nuestro modelo habla “local gana por +X”
-# la casa habla “local -X”
 modelo_spread_formato_casa = -spread_global
 dif_spread_global = modelo_spread_formato_casa - spread_casa
 dif_total_global = total_global - total_casa
@@ -182,13 +178,19 @@ for _ in range(num_sims_global):
     if (sim_local + sim_visita) > total_casa:
         overs += 1
 
-st.write(f"Prob. de que **{local or 'LOCAL'}** cubra el spread (GLOBAL): **{covers/num_sims_global*100:.1f}%**")
-st.write(f"Prob. de OVER (GLOBAL): **{overs/num_sims_global*100:.1f}%**")
+prob_cover_local_global = covers / num_sims_global * 100
+prob_over_global = overs / num_sims_global * 100
+
+st.write(f"Prob. de que **{local or 'LOCAL'}** cubra el spread (GLOBAL): **{prob_cover_local_global:.1f}%**")
+st.write(f"Prob. de OVER (GLOBAL): **{prob_over_global:.1f}%**")
 
 # ------------------------------------------------
 # 10. SIMULACIÓN MONTE CARLO (CASA / VISITA)
 # ------------------------------------------------
 st.subheader("Simulación Monte Carlo 🟩 (CASA / VISITA)")
+prob_cover_local_cv = None
+prob_over_cv = None
+
 if hay_cv:
     num_sims_cv = st.slider("Número de simulaciones (CASA/VISITA)", 1000, 50000, 10000, 1000, key="cv_sims")
     desv_cv = max(5, total_cv * 0.15)
@@ -205,7 +207,82 @@ if hay_cv:
         if (sim_local + sim_visita) > total_casa:
             overs_cv += 1
 
-    st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (CASA/VISITA): **{covers_cv/num_sims_cv*100:.1f}%**")
-    st.write(f"Prob. de OVER (CASA/VISITA): **{overs_cv/num_sims_cv*100:.1f}%**")
+    prob_cover_local_cv = covers_cv / num_sims_cv * 100
+    prob_over_cv = overs_cv / num_sims_cv * 100
+
+    st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (CASA/VISITA): **{prob_cover_local_cv:.1f}%**")
+    st.write(f"Prob. de OVER (CASA/VISITA): **{prob_over_cv:.1f}%**")
 else:
     st.info("Para correr esta simulación llena los campos de casa/visita.")
+
+# ------------------------------------------------
+# 11. APUESTA RECOMENDADA
+# ------------------------------------------------
+st.subheader("Apuesta recomendada 🟣")
+
+opciones = []
+
+# 1) SPREAD GLOBAL (local o visita, el que tenga más %)
+prob_visita_spread_global = 100 - prob_cover_local_global
+if prob_cover_local_global >= prob_visita_spread_global:
+    opciones.append((
+        f"Spread (GLOBAL): {local or 'LOCAL'} {spread_casa}",
+        prob_cover_local_global
+    ))
+else:
+    # si la casa tiene -5.5 para el local, la visita tiene +5.5
+    visita_linea = -spread_casa
+    opciones.append((
+        f"Spread (GLOBAL): {visita or 'VISITA'} {visita_linea:+.1f}",
+        prob_visita_spread_global
+    ))
+
+# 2) TOTAL GLOBAL (over u under, el que tenga más %)
+prob_under_global = 100 - prob_over_global
+if prob_over_global >= prob_under_global:
+    opciones.append((
+        f"Total (GLOBAL): OVER {total_casa}",
+        prob_over_global
+    ))
+else:
+    opciones.append((
+        f"Total (GLOBAL): UNDER {total_casa}",
+        prob_under_global
+    ))
+
+# 3) Si hay casa/visita, también los metemos
+if hay_cv and prob_cover_local_cv is not None:
+    prob_visita_spread_cv = 100 - prob_cover_local_cv
+    if prob_cover_local_cv >= prob_visita_spread_cv:
+        opciones.append((
+            f"Spread (CASA/VISITA): {local or 'LOCAL'} {spread_casa}",
+            prob_cover_local_cv
+        ))
+    else:
+        visita_linea = -spread_casa
+        opciones.append((
+            f"Spread (CASA/VISITA): {visita or 'VISITA'} {visita_linea:+.1f}",
+            prob_visita_spread_cv
+        ))
+
+if hay_cv and prob_over_cv is not None:
+    prob_under_cv = 100 - prob_over_cv
+    if prob_over_cv >= prob_under_cv:
+        opciones.append((
+            f"Total (CASA/VISITA): OVER {total_casa}",
+            prob_over_cv
+        ))
+    else:
+        opciones.append((
+            f"Total (CASA/VISITA): UNDER {total_casa}",
+            prob_under_cv
+        ))
+
+# Elegimos la mejor
+if opciones:
+    mejor = max(opciones, key=lambda x: x[1])
+    st.success(f"📌 Apuesta sugerida: **{mejor[0]}**")
+    st.write(f"Probabilidad estimada por el modelo: **{mejor[1]:.1f}%**")
+    st.caption("Nota: es solo la apuesta con mayor probabilidad, no está midiendo valor/cuota.")
+else:
+    st.info("Llena los datos del partido y las líneas para ver una recomendación.")
