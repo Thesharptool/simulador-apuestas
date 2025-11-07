@@ -1,5 +1,6 @@
 import streamlit as st
 import random
+import requests
 
 # ------------------------------------------------
 # CONFIG
@@ -15,6 +16,34 @@ Si llenas casa/visita te muestra las dos proyecciones.
 """)
 
 # ------------------------------------------------
+# 0. CONEXIÓN A SPORTSDATA.IO (NFL)
+# ------------------------------------------------
+API_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"  # la tuya
+NFL_STANDINGS_URL = "https://api.sportsdata.io/v3/nfl/scores/json/Standings/2025REG"
+
+@st.cache_data(ttl=3600)
+def cargar_equipos_nfl():
+    headers = {"Ocp-Apim-Subscription-Key": API_KEY}
+    try:
+        resp = requests.get(NFL_STANDINGS_URL, headers=headers, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        # hacemos índice por nombre y por abreviación
+        por_nombre = {}
+        por_key = {}
+        for team in data:
+            nombre = team["Name"].lower()
+            key = team["Key"].lower()
+            por_nombre[nombre] = team
+            por_key[key] = team
+        return por_nombre, por_key
+    except Exception as e:
+        st.warning(f"No pude traer datos de NFL: {e}")
+        return {}, {}
+
+equipos_por_nombre, equipos_por_key = cargar_equipos_nfl()
+
+# ------------------------------------------------
 # 1. DATOS DE ENTRADA (en blanco)
 # ------------------------------------------------
 st.subheader("Datos del partido")
@@ -23,15 +52,72 @@ col1, col2 = st.columns(2)
 
 with col1:
     local = st.text_input("Equipo LOCAL", "")
+    # botón para autollenar LOCAL
+    auto_local = st.button("Rellenar LOCAL desde NFL")
     st.markdown("**Promedios GLOBAL del LOCAL**")
-    l_anota_global = st.number_input("Local: puntos que ANOTA (global)", value=0.0, step=0.1)
-    l_permite_global = st.number_input("Local: puntos que PERMITE (global)", value=0.0, step=0.1)
+    if "l_anota_global" not in st.session_state:
+        st.session_state.l_anota_global = 0.0
+    if "l_permite_global" not in st.session_state:
+        st.session_state.l_permite_global = 0.0
+
+    if auto_local and local:
+        nombre_buscar = local.lower().strip()
+        team = equipos_por_nombre.get(nombre_buscar) or equipos_por_key.get(nombre_buscar)
+        if team:
+            # PointsFor y PointsAgainst son totales de la temporada, hay que dividir entre juegos
+            games = team.get("Games", 17) or 17
+            st.session_state.l_anota_global = team.get("PointsFor", 0) / games
+            st.session_state.l_permite_global = team.get("PointsAgainst", 0) / games
+            st.success(f"LOCAL rellenado con datos reales de {team['Name']}")
+        else:
+            st.error("No encontré ese equipo en la NFL. Prueba con la abreviación (ej. DAL, SF, KC).")
+
+    l_anota_global = st.number_input(
+        "Local: puntos que ANOTA (global)",
+        value=st.session_state.l_anota_global,
+        step=0.1,
+        key="input_l_anota"
+    )
+    l_permite_global = st.number_input(
+        "Local: puntos que PERMITE (global)",
+        value=st.session_state.l_permite_global,
+        step=0.1,
+        key="input_l_permite"
+    )
 
 with col2:
     visita = st.text_input("Equipo VISITA", "")
+    auto_visita = st.button("Rellenar VISITA desde NFL")
     st.markdown("**Promedios GLOBAL del VISITA**")
-    v_anota_global = st.number_input("Visita: puntos que ANOTA (global)", value=0.0, step=0.1)
-    v_permite_global = st.number_input("Visita: puntos que PERMITE (global)", value=0.0, step=0.1)
+
+    if "v_anota_global" not in st.session_state:
+        st.session_state.v_anota_global = 0.0
+    if "v_permite_global" not in st.session_state:
+        st.session_state.v_permite_global = 0.0
+
+    if auto_visita and visita:
+        nombre_buscar = visita.lower().strip()
+        team = equipos_por_nombre.get(nombre_buscar) or equipos_por_key.get(nombre_buscar)
+        if team:
+            games = team.get("Games", 17) or 17
+            st.session_state.v_anota_global = team.get("PointsFor", 0) / games
+            st.session_state.v_permite_global = team.get("PointsAgainst", 0) / games
+            st.success(f"VISITA rellenado con datos reales de {team['Name']}")
+        else:
+            st.error("No encontré ese equipo en la NFL. Prueba con la abreviación (ej. DAL, SF, KC).")
+
+    v_anota_global = st.number_input(
+        "Visita: puntos que ANOTA (global)",
+        value=st.session_state.v_anota_global,
+        step=0.1,
+        key="input_v_anota"
+    )
+    v_permite_global = st.number_input(
+        "Visita: puntos que PERMITE (global)",
+        value=st.session_state.v_permite_global,
+        step=0.1,
+        key="input_v_permite"
+    )
 
 # ------------------------------------------------
 # 2. OPCIONAL: CASA / VISITA
@@ -222,7 +308,7 @@ st.subheader("Apuesta recomendada 🟣")
 
 opciones = []
 
-# 1) SPREAD GLOBAL (local o visita, el que tenga más %)
+# 1) SPREAD GLOBAL (local o visita)
 prob_visita_spread_global = 100 - prob_cover_local_global
 if prob_cover_local_global >= prob_visita_spread_global:
     opciones.append((
@@ -230,14 +316,13 @@ if prob_cover_local_global >= prob_visita_spread_global:
         prob_cover_local_global
     ))
 else:
-    # si la casa tiene -5.5 para el local, la visita tiene +5.5
     visita_linea = -spread_casa
     opciones.append((
         f"Spread (GLOBAL): {visita or 'VISITA'} {visita_linea:+.1f}",
         prob_visita_spread_global
     ))
 
-# 2) TOTAL GLOBAL (over u under, el que tenga más %)
+# 2) TOTAL GLOBAL
 prob_under_global = 100 - prob_over_global
 if prob_over_global >= prob_under_global:
     opciones.append((
@@ -250,7 +335,7 @@ else:
         prob_under_global
     ))
 
-# 3) Si hay casa/visita, también los metemos
+# 3) CASA / VISITA
 if hay_cv and prob_cover_local_cv is not None:
     prob_visita_spread_cv = 100 - prob_cover_local_cv
     if prob_cover_local_cv >= prob_visita_spread_cv:
@@ -278,11 +363,10 @@ if hay_cv and prob_over_cv is not None:
             prob_under_cv
         ))
 
-# Elegimos la mejor
 if opciones:
     mejor = max(opciones, key=lambda x: x[1])
     st.success(f"📌 Apuesta sugerida: **{mejor[0]}**")
     st.write(f"Probabilidad estimada por el modelo: **{mejor[1]:.1f}%**")
-    st.caption("Nota: es solo la apuesta con mayor probabilidad, no está midiendo valor/cuota.")
+    st.caption("Nota: es la apuesta con mayor % según las simulaciones.")
 else:
     st.info("Llena los datos del partido y las líneas para ver una recomendación.")
