@@ -116,7 +116,7 @@ with col2:
     )
 
 # =========================================================
-# 2. CASA / VISITA
+# 2. CASA / VISITA (los dejas tú a mano)
 # =========================================================
 st.subheader("Promedios por condición (opcional)")
 c1, c2 = st.columns(2)
@@ -141,15 +141,18 @@ with c4:
     af_visita = st.checkbox("¿Afecta ofensiva VISITA?", False)
     mult_visita = st.slider("Multiplicador ofensivo VISITA", 0.5, 1.1, 1.0, 0.05)
 
-if not af_local: mult_local = 1.0
-if not af_visita: mult_visita = 1.0
+if not af_local:
+    mult_local = 1.0
+if not af_visita:
+    mult_visita = 1.0
 
 # =========================================================
 # 4. FUNCIÓN MODELO
 # =========================================================
 def proyeccion(ofensiva, defensa, es_local=False):
     base = 0.55 * ofensiva + 0.35 * defensa
-    if es_local: base += 1.5
+    if es_local:
+        base += 1.5
     return base
 
 # =========================================================
@@ -160,7 +163,12 @@ pts_local = proyeccion(l_anota_global, v_permite_global, True) * mult_local
 pts_visita = proyeccion(v_anota_global, l_permite_global, False) * mult_visita
 total = pts_local + pts_visita
 spread = pts_local - pts_visita
-st.write(f"{local}: **{pts_local:.1f}** | {visita}: **{pts_visita:.1f}** | Total: **{total:.1f}** | Spread: **{spread:+.1f}**")
+st.write(
+    f"{local or 'LOCAL'}: **{pts_local:.1f}** | "
+    f"{visita or 'VISITA'}: **{pts_visita:.1f}** | "
+    f"Total modelo: **{total:.1f}** | "
+    f"Spread modelo (local - visita): **{spread:+.1f}**"
+)
 
 # =========================================================
 # 6. MONTE CARLO
@@ -175,12 +183,40 @@ desv = max(5, total * 0.15)
 for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local, desv))
     sim_v = max(0, random.gauss(pts_visita, desv))
+
+    # cubrir spread de la casa (la casa está expresada como LOCAL)
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
+
+    # over
     if (sim_l + sim_v) > total_casa:
         overs += 1
 
-prob_cover = covers / num_sims * 100
+prob_cover = covers / num_sims * 100          # prob de que gane el lado del LOCAL con esa línea
 prob_over = overs / num_sims * 100
 st.write(f"Prob. que {local or 'LOCAL'} cubra el spread: **{prob_cover:.1f}%**")
 st.write(f"Prob. de OVER: **{prob_over:.1f}%**")
+
+# =========================================================
+# 7. APUESTA RECOMENDADA (lo que te faltaba)
+# =========================================================
+st.subheader("Apuesta recomendada 🟣")
+
+# prob del otro lado del spread (la visita)
+prob_cover_visita = 100 - prob_cover
+
+# prob del under
+prob_under = 100 - prob_over
+
+opciones = [
+    (f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover),
+    (f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", prob_cover_visita),
+    (f"OVER {total_casa}", prob_over),
+    (f"UNDER {total_casa}", prob_under),
+]
+
+mejor = max(opciones, key=lambda x: x[1])
+
+st.success(f"📌 Apuesta con mayor % de pegar: **{mejor[0]}**")
+st.write(f"Probabilidad estimada por la simulación: **{mejor[1]:.1f}%**")
+st.caption("No está considerando cuotas, solo el % más alto.")
