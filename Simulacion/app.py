@@ -200,15 +200,42 @@ else:
     st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
 
 # =========================================================
-# 6. LÍNEA DEL CASINO + MONTE CARLO GLOBAL
+# 6. LÍNEA DEL CASINO
+# =========================================================
+st.subheader("Línea del casino")
+c5, c6 = st.columns(2)
+with c5:
+    spread_casa = st.number_input("Spread (línea del casino) — negativo si LOCAL es favorito", -50.0, 50.0, 0.0, 0.5)
+with c6:
+    total_casa = st.number_input("Total (O/U del casino)", 0.0, 300.0, 0.0, 0.5)
+
+# =========================================================
+# 6.b DIFERENCIAS VS LÍNEA (lo que pediste)
+# =========================================================
+st.subheader("Diferencias vs la línea del casino")
+
+# GLOBAL
+# modelo da spread = local - visita
+# la casa da spread = “cuántos puntos le quitamos al LOCAL”
+# para comparar: pasamos nuestro spread a formato casa:
+modelo_spread_formato_casa = -spread
+dif_spread_global = modelo_spread_formato_casa - spread_casa
+st.write(f"🟦 Dif. SPREAD (GLOBAL): **{dif_spread_global:+.1f} pts**")
+
+# CASA / VISITA
+if hay_cv:
+    modelo_spread_cv_formato_casa = -spread_cv
+    dif_spread_cv = modelo_spread_cv_formato_casa - spread_casa
+    st.write(f"🟩 Dif. SPREAD (CASA/VISITA): **{dif_spread_cv:+.1f} pts**")
+
+# =========================================================
+# 7. MONTE CARLO GLOBAL
 # =========================================================
 st.subheader("Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones", 1000, 50000, 10000, 1000)
-spread_casa = st.number_input("Spread (línea del casino)", -50.0, 50.0, 0.0, 0.5)
-total_casa = st.number_input("Total (O/U del casino)", 0.0, 300.0, 0.0, 0.5)
-
 covers, overs = 0, 0
 desv = max(5, total * 0.15)
+
 for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local, desv))
     sim_v = max(0, random.gauss(pts_visita, desv))
@@ -227,7 +254,7 @@ st.write(f"Prob. de OVER (GLOBAL): **{prob_over:.1f}%**")
 st.write(f"Prob. de UNDER (GLOBAL): **{prob_under:.1f}%**")
 
 # =========================================================
-# 6.b MONTE CARLO CASA / VISITA
+# 8. MONTE CARLO CASA / VISITA
 # =========================================================
 st.subheader("Simulación Monte Carlo 🟩 (CASA / VISITA)")
 prob_cover_cv = None
@@ -258,18 +285,18 @@ else:
     st.info("Para correr esta simulación llena los campos de casa/visita.")
 
 # =========================================================
-# 7. APUESTA RECOMENDADA (con lo GLOBAL)
+# 9. APUESTA RECOMENDADA
 # =========================================================
 st.subheader("Apuesta recomendada 🟣")
 
 opciones = []
 
-# spread local vs visita
+# spread global (local o visita)
 prob_visita_spread = 100 - prob_cover
 opciones.append((f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover))
 opciones.append((f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", prob_visita_spread))
 
-# total over / under
+# total global
 opciones.append((f"OVER {total_casa}", prob_over))
 opciones.append((f"UNDER {total_casa}", prob_under))
 
