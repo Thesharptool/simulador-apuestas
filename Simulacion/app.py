@@ -16,11 +16,13 @@ st.markdown("""
 Si llenas casa/visita te muestro las dos proyecciones.
 """)
 
+# NFL / NBA switch
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
 
+# tu key
 SPORTSDATAIO_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"
 NFL_SEASON = "2025REG"
-NBA_SEASON = "2025"   # en tu trial no está abierto, pero lo dejamos
+NBA_SEASON = "2025"   # tu trial no la tiene abierta, pero dejamos el hook
 
 
 # =========================================================
@@ -60,7 +62,7 @@ def cargar_nfl(api_key: str, season: str):
 
 @st.cache_data(ttl=600)
 def cargar_nba(api_key: str, season: str):
-    # tu trial no tiene NBA, devolvemos vacío
+    # En tu cuenta trial no está habilitado, devolvemos vacío
     return {}, "NBA no está habilitado en tu trial. Usa datos manuales."
 
 
@@ -85,7 +87,7 @@ else:
 st.subheader("1) Datos del partido")
 col1, col2 = st.columns(2)
 
-# aseguramos que existan las llaves en session_state
+# asegurar llaves
 for key in ["l_anota_global", "l_permite_global", "v_anota_global", "v_permite_global"]:
     st.session_state.setdefault(key, 0.0)
 
@@ -166,29 +168,35 @@ with c2:
 hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 
 # =========================================================
-# 4) AJUSTE POR LESIONES
+# 4) AJUSTE POR LESIONES / FORMA (con etiquetas)
 # =========================================================
-st.subheader("3) Ajuste por lesiones")
-c3, c4 = st.columns(2)
-if liga == "NFL":
-    with c3:
-        af_local = st.checkbox("¿Afecta ofensiva LOCAL?", False, key="af_local")
-        mult_local = st.slider("Multiplicador ofensivo LOCAL", 0.5, 1.2, 1.0, 0.05)
-    with c4:
-        af_visita = st.checkbox("¿Afecta ofensiva VISITA?", False, key="af_visita")
-        mult_visita = st.slider("Multiplicador ofensivo VISITA", 0.5, 1.2, 1.0, 0.05)
-else:
-    with c3:
-        af_local = st.checkbox("¿Lesiones importantes en LOCAL?", False, key="af_local")
-        mult_local = st.slider("Multiplicador LOCAL (lesiones)", 0.4, 1.3, 1.0, 0.05)
-    with c4:
-        af_visita = st.checkbox("¿Lesiones importantes en VISITA?", False, key="af_visita")
-        mult_visita = st.slider("Multiplicador VISITA (lesiones)", 0.4, 1.3, 1.0, 0.05)
+st.subheader("3) Ajuste por lesiones / QB / forma")
 
-if not af_local:
-    mult_local = 1.0
-if not af_visita:
-    mult_visita = 1.0
+def option_to_multiplier(opt: str) -> float:
+    if "Muy lesionado" in opt:
+        return 0.70   # -30%
+    if "Lesionado" in opt:
+        return 0.85   # -15%
+    if "En buen momento" in opt:
+        return 1.10   # +10%
+    return 1.00       # healthy
+
+col_adj1, col_adj2 = st.columns(2)
+with col_adj1:
+    opt_local = st.selectbox(
+        "Estado ofensivo LOCAL",
+        ["Healthy (1.00)", "Lesionado (-15%)", "Muy lesionado (-30%)", "En buen momento (+10%)"],
+        index=0
+    )
+    mult_local = option_to_multiplier(opt_local)
+
+with col_adj2:
+    opt_visita = st.selectbox(
+        "Estado ofensivo VISITA",
+        ["Healthy (1.00)", "Lesionado (-15%)", "Muy lesionado (-30%)", "En buen momento (+10%)"],
+        index=0
+    )
+    mult_visita = option_to_multiplier(opt_visita)
 
 # =========================================================
 # 5) FUNCIÓN DEL MODELO
@@ -251,6 +259,7 @@ with c5:
 with c6:
     total_casa = st.number_input("Total (O/U) del casino", 0.0, 300.0, 0.0, 0.5)
 
+# diferencias GLOBAL
 modelo_spread_formato_casa = -spread_global
 dif_spread_global = modelo_spread_formato_casa - spread_casa
 dif_total_global = total_global - total_casa
@@ -258,17 +267,23 @@ dif_total_global = total_global - total_casa
 st.markdown(f"🟦 Dif. SPREAD (GLOBAL): **{dif_spread_global:+.1f} pts**")
 st.markdown(f"🟦 Dif. TOTAL (GLOBAL): **{dif_total_global:+.1f} pts**")
 
+# detector de TRAP
 if abs(dif_spread_global) >= 8:
-    st.error("⚠️ El spread del modelo está MUY lejos de la línea. Revisa datos o puede haber value/trap.")
+    st.error("🚨 Posible TRAP / o datos mal cargados: tu modelo está ≥ 8 pts del spread real.")
 elif abs(dif_spread_global) >= 5:
-    st.warning("⚠️ El spread del modelo está distinto a la línea, revísalo.")
+    st.warning("⚠️ Línea sospechosa: tu modelo está ≥ 5 pts del spread real. Revísalo.")
 
+# diferencias CASA/VISITA
 if hay_cv:
     modelo_spread_cv_formato_casa = -spread_cv
     dif_spread_cv = modelo_spread_cv_formato_casa - spread_casa
     dif_total_cv = total_cv - total_casa
     st.markdown(f"🟩 Dif. SPREAD (CASA/VISITA): **{dif_spread_cv:+.1f} pts**")
     st.markdown(f"🟩 Dif. TOTAL (CASA/VISITA): **{dif_total_cv:+.1f} pts**")
+    if abs(dif_spread_cv) >= 8:
+        st.error("🚨 (CV) Posible TRAP en la proyección casa/visita.")
+    elif abs(dif_spread_cv) >= 5:
+        st.warning("⚠️ (CV) Línea sospechosa en casa/visita.")
 
 # =========================================================
 # 7b) Moneyline opcional
@@ -292,7 +307,7 @@ if prob_ml_local is not None and prob_ml_visita is not None:
     st.caption(f"Prob. implícita LOCAL: {prob_ml_local:.1f}%, Prob. implícita VISITA: {prob_ml_visita:.1f}%")
 
 # =========================================================
-# 8) COMPARATIVA DE PROBABILIDADES
+# 8) COMPARATIVA DE PROBABILIDADES POR SPREAD
 # =========================================================
 st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
 def prob_desde_spread(spread_modelo, deporte="NFL"):
@@ -353,7 +368,7 @@ else:
     st.info("Para correr esta simulación llena los campos de casa/visita.")
 
 # =========================================================
-# 11) APUESTAS RECOMENDADAS
+# 11) APUESTAS RECOMENDADAS (≥ 55%)
 # =========================================================
 st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
 recs = []
