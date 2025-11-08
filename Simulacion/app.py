@@ -8,7 +8,7 @@ import requests
 st.set_page_config(page_title="Simulador de Apuestas", layout="wide")
 
 st.title("Simulador de Apuestas 🏈🏀")
-st.markdown("🧠 Modelo ponderado activo (v3.1)")
+st.markdown("🧠 Modelo ponderado activo (v3.2)")
 st.markdown("""
 🟦 = cálculo con promedios GLOBAL  
 🟩 = cálculo con promedios CASA/VISITA  
@@ -217,22 +217,28 @@ prob_under = 100 - prob_over
 st.write(f"Prob. que {local or 'LOCAL'} cubra: **{prob_cover:.1f}%** | OVER: **{prob_over:.1f}%** | UNDER: **{prob_under:.1f}%**")
 
 # =========================================================
-# 8. APUESTA RECOMENDADA (condicional >55%)
+# 8. APUESTAS RECOMENDADAS (todas >55%)
 # =========================================================
-st.subheader("Apuesta recomendada 🟣")
+st.subheader("Apuestas recomendadas 🟣")
 
-opciones = []
-prob_visita_spread = 100 - prob_cover
-opciones.append((f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover))
-opciones.append((f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", prob_visita_spread))
-opciones.append((f"OVER {total_casa}", prob_over))
-opciones.append((f"UNDER {total_casa}", prob_under))
+recomendaciones = []
 
-mejor = max(opciones, key=lambda x: x[1])
+if prob_cover >= 55:
+    recomendaciones.append((f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover))
 
-if mejor[1] >= 55:
-    st.success(f"📌 Apuesta con mayor % de pegar: **{mejor[0]}**")
-    st.write(f"Probabilidad estimada: **{mejor[1]:.1f}%** ✅ (supera el 55%)")
+if (100 - prob_cover) >= 55:
+    recomendaciones.append((f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", 100 - prob_cover))
+
+if prob_over >= 55:
+    recomendaciones.append((f"OVER {total_casa}", prob_over))
+
+if prob_under >= 55:
+    recomendaciones.append((f"UNDER {total_casa}", prob_under))
+
+if recomendaciones:
+    for apuesta, prob in recomendaciones:
+        st.success(f"📌 {apuesta} — **{prob:.1f}%** de probabilidad")
 else:
-    st.warning(f"⚠️ Ninguna opción supera el 55% de probabilidad (mejor: {mejor[0]} con {mejor[1]:.1f}%)")
-st.caption("Nota: no se consideran cuotas, solo el % de simulación.")
+    st.warning("⚠️ Ninguna opción supera el 55% de probabilidad según la simulación.")
+
+st.caption("Nota: no considera cuotas, solo el % estimado por el modelo.")
