@@ -116,7 +116,7 @@ with col2:
     )
 
 # =========================================================
-# 2. CASA / VISITA (los dejas tú a mano)
+# 2. CASA / VISITA (los llenas tú)
 # =========================================================
 st.subheader("Promedios por condición (opcional)")
 c1, c2 = st.columns(2)
@@ -156,7 +156,7 @@ def proyeccion(ofensiva, defensa, es_local=False):
     return base
 
 # =========================================================
-# 5. PROYECCIONES
+# 5. PROYECCIÓN GLOBAL
 # =========================================================
 st.subheader("🟦 Proyección del modelo (GLOBAL)")
 pts_local = proyeccion(l_anota_global, v_permite_global, True) * mult_local
@@ -171,7 +171,36 @@ st.write(
 )
 
 # =========================================================
-# 6. MONTE CARLO
+# 5.b PROYECCIÓN CASA / VISITA
+# =========================================================
+st.subheader("🟩 Proyección del modelo (CASA / VISITA)")
+if hay_cv:
+    pts_local_cv = proyeccion(
+        l_anota_casa if l_anota_casa > 0 else l_anota_global,
+        v_permite_visita if v_permite_visita > 0 else v_permite_global,
+        True
+    ) * mult_local
+
+    pts_visita_cv = proyeccion(
+        v_anota_visita if v_anota_visita > 0 else v_anota_global,
+        l_permite_casa if l_permite_casa > 0 else l_permite_global,
+        False
+    ) * mult_visita
+
+    total_cv = pts_local_cv + pts_visita_cv
+    spread_cv = pts_local_cv - pts_visita_cv
+
+    st.write(
+        f"{local or 'LOCAL'} (casa): **{pts_local_cv:.1f}** | "
+        f"{visita or 'VISITA'} (visita): **{pts_visita_cv:.1f}** | "
+        f"Total casa/visita: **{total_cv:.1f}** | "
+        f"Spread casa/visita: **{spread_cv:+.1f}**"
+    )
+else:
+    st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
+
+# =========================================================
+# 6. LÍNEA DEL CASINO + MONTE CARLO GLOBAL
 # =========================================================
 st.subheader("Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones", 1000, 50000, 10000, 1000)
@@ -184,39 +213,67 @@ for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local, desv))
     sim_v = max(0, random.gauss(pts_visita, desv))
 
-    # cubrir spread de la casa (la casa está expresada como LOCAL)
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
-
-    # over
     if (sim_l + sim_v) > total_casa:
         overs += 1
 
-prob_cover = covers / num_sims * 100          # prob de que gane el lado del LOCAL con esa línea
+prob_cover = covers / num_sims * 100
 prob_over = overs / num_sims * 100
-st.write(f"Prob. que {local or 'LOCAL'} cubra el spread: **{prob_cover:.1f}%**")
-st.write(f"Prob. de OVER: **{prob_over:.1f}%**")
+prob_under = 100 - prob_over
+
+st.write(f"Prob. que {local or 'LOCAL'} cubra el spread (GLOBAL): **{prob_cover:.1f}%**")
+st.write(f"Prob. de OVER (GLOBAL): **{prob_over:.1f}%**")
+st.write(f"Prob. de UNDER (GLOBAL): **{prob_under:.1f}%**")
 
 # =========================================================
-# 7. APUESTA RECOMENDADA (lo que te faltaba)
+# 6.b MONTE CARLO CASA / VISITA
+# =========================================================
+st.subheader("Simulación Monte Carlo 🟩 (CASA / VISITA)")
+prob_cover_cv = None
+prob_over_cv = None
+
+if hay_cv:
+    num_sims_cv = st.slider("Número de simulaciones (CASA/VISITA)", 1000, 50000, 10000, 1000, key="cv_sims")
+    desv_cv = max(5, total_cv * 0.15)
+    covers_cv, overs_cv = 0, 0
+
+    for _ in range(num_sims_cv):
+        sim_l = max(0, random.gauss(pts_local_cv, desv_cv))
+        sim_v = max(0, random.gauss(pts_visita_cv, desv_cv))
+
+        if (sim_l - sim_v) + spread_casa >= 0:
+            covers_cv += 1
+        if (sim_l + sim_v) > total_casa:
+            overs_cv += 1
+
+    prob_cover_cv = covers_cv / num_sims_cv * 100
+    prob_over_cv = overs_cv / num_sims_cv * 100
+    prob_under_cv = 100 - prob_over_cv
+
+    st.write(f"Prob. que {local or 'LOCAL'} cubra (CASA/VISITA): **{prob_cover_cv:.1f}%**")
+    st.write(f"Prob. de OVER (CASA/VISITA): **{prob_over_cv:.1f}%**")
+    st.write(f"Prob. de UNDER (CASA/VISITA): **{prob_under_cv:.1f}%**")
+else:
+    st.info("Para correr esta simulación llena los campos de casa/visita.")
+
+# =========================================================
+# 7. APUESTA RECOMENDADA (con lo GLOBAL)
 # =========================================================
 st.subheader("Apuesta recomendada 🟣")
 
-# prob del otro lado del spread (la visita)
-prob_cover_visita = 100 - prob_cover
+opciones = []
 
-# prob del under
-prob_under = 100 - prob_over
+# spread local vs visita
+prob_visita_spread = 100 - prob_cover
+opciones.append((f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover))
+opciones.append((f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", prob_visita_spread))
 
-opciones = [
-    (f"Spread {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover),
-    (f"Spread {visita or 'VISITA'} {-spread_casa:+.1f}", prob_cover_visita),
-    (f"OVER {total_casa}", prob_over),
-    (f"UNDER {total_casa}", prob_under),
-]
+# total over / under
+opciones.append((f"OVER {total_casa}", prob_over))
+opciones.append((f"UNDER {total_casa}", prob_under))
 
 mejor = max(opciones, key=lambda x: x[1])
-
 st.success(f"📌 Apuesta con mayor % de pegar: **{mejor[0]}**")
-st.write(f"Probabilidad estimada por la simulación: **{mejor[1]:.1f}%**")
+st.write(f"Probabilidad estimada: **{mejor[1]:.1f}%**")
 st.caption("No está considerando cuotas, solo el % más alto.")
