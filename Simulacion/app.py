@@ -154,12 +154,11 @@ hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 # =========================================================
 st.subheader("3) Ajuste por lesiones / forma")
 
-# Ajuste general pequeño (skill, OL, forma)
 opciones_estado = {
     "Healthy / completo": 1.00,
-    "1-2 bajas (WR/RB/OL)": 0.98,       # -2%
-    "Varias bajas ofensivas": 0.95,     # -5%
-    "Ofensiva en buen momento": 1.03,   # +3%
+    "1-2 bajas (WR/RB/OL)": 0.98,
+    "Varias bajas ofensivas": 0.95,
+    "Ofensiva en buen momento": 1.03,
 }
 
 col_adj1, col_adj2 = st.columns(2)
@@ -179,7 +178,6 @@ with qbcol1:
 with qbcol2:
     qb_visita_out = st.checkbox("No juega QB titular VISITA", value=False)
 
-# cuánto vale un QB para nosotros
 if liga == "NFL":
     qb_penal_local = -3.0 if qb_local_out else 0.0
     qb_penal_visita = -3.0 if qb_visita_out else 0.0
@@ -200,11 +198,9 @@ def proyeccion_suavizada(ofensiva, defensa, es_local=False):
         base += 1.5
     return base
 
-# GLOBAL
 pts_local_global = proyeccion_suavizada(l_anota_global, v_permite_global, es_local=True) * mult_estado_local
 pts_visita_global = proyeccion_suavizada(v_anota_global, l_permite_global, es_local=False) * mult_estado_visita
 
-# aplicar penalización por QB
 pts_local_global = max(0.0, pts_local_global + qb_penal_local)
 pts_visita_global = max(0.0, pts_visita_global + qb_penal_visita)
 
@@ -217,7 +213,6 @@ st.write(f"- {visita or 'VISITA'}: **{pts_visita_global:.1f} pts**")
 st.write(f"- Total modelo: **{total_global:.1f}**")
 st.write(f"- Spread modelo (local - visita): **{spread_global:+.1f}**")
 
-# CASA / VISITA
 st.markdown("🟩 **CASA / VISITA**")
 if hay_cv:
     pts_local_cv = proyeccion_suavizada(
@@ -268,11 +263,20 @@ st.write(f"- Modelo: **{total_global:.1f}**")
 st.write(f"- Casa: **{total_casa:.1f}**")
 st.write(f"- DIF. TOTAL (GLOBAL): **{dif_total_global:+.1f} pts**")
 
-if abs(dif_spread_global) >= 5 or abs(dif_total_global) >= 7:
-    st.error("⚠️ Línea muy diferente a tu modelo. Puede ser trap line o info que tu modelo no trae.")
-elif abs(dif_spread_global) >= 3:
-    st.warning("⚠️ Tu modelo no coincide con la casa. Revísalo.")
+# -------- alerta específica --------
+motivos_alerta = []
+if abs(dif_spread_global) >= 5:
+    motivos_alerta.append("spread")
+if abs(dif_total_global) >= 7:
+    motivos_alerta.append("total")
 
+if motivos_alerta:
+    motivo_txt = " y ".join(motivos_alerta)
+    st.error(f"⚠️ Línea muy diferente a tu modelo ({motivo_txt}). Puede ser trap line o info que tu modelo no trae.")
+elif abs(dif_spread_global) >= 3:
+    st.warning("⚠️ Tu modelo no coincide con la casa en el spread. Revísalo.")
+
+# CASA/VISITA
 if hay_cv:
     modelo_spread_cv_formato_casa = -spread_cv
     dif_spread_cv = modelo_spread_cv_formato_casa - spread_casa
