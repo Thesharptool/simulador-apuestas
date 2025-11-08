@@ -21,7 +21,7 @@ Si llenas casa/visita te muestro las dos proyecciones.
 # =========================================================
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
 
-# tu key REAL de SportsDataIO (sirve para NFL; tu plan actual no tiene NBA abierta)
+# tu key REAL de SportsDataIO (sirve para NFL; NBA en tu cuenta está cerrada)
 SPORTSDATAIO_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"
 NFL_SEASON = "2025REG"
 
@@ -50,7 +50,6 @@ def cargar_nfl_desde_api(api_key: str, season: str):
         pf = float(t.get("PointsFor", 0) or 0)
         pa = float(t.get("PointsAgainst", 0) or 0)
         jugados = wins + losses + ties
-        # a veces viene "Games", lo usamos de respaldo
         games_raw = t.get("Games", 0) or 0
         jugados = jugados if jugados > 0 else games_raw if games_raw > 0 else 1
         equipos[name] = {
@@ -60,19 +59,12 @@ def cargar_nfl_desde_api(api_key: str, season: str):
     return equipos, ""
 
 def proyeccion_puntos(ofensiva, defensa, es_local=False):
-    """
-    Modelo sencillo y entendible:
-    - 55% lo que anota el equipo
-    - 35% lo que permite el rival
-    - +1.5 por jugar en casa (solo NFL)
-    """
     base = 0.55 * ofensiva + 0.35 * defensa
     if es_local and liga == "NFL":
         base += 1.5
     return base
 
 def prob_desde_moneyline(ml: float) -> float:
-    """Convierte moneyline americano a probabilidad implícita (%)"""
     if ml is None or ml == 0:
         return 0.0
     if ml > 0:
@@ -81,18 +73,23 @@ def prob_desde_moneyline(ml: float) -> float:
         return (-ml) / (-ml + 100) * 100
 
 def config_desviacion_por_liga(liga: str, total_modelo: float) -> float:
-    """
-    Le damos una desviación (lo 'random' del partido) distinta por liga.
-    - NFL: resultados más dispersos
-    - NBA: más posesiones -> ruida más controlada relativo al total
-    """
     if liga == "NFL":
         return max(6.0, total_modelo * 0.12)
-    else:  # NBA
+    else:
         return max(10.0, total_modelo * 0.08)
 
 # =========================================================
-# 1) CARGA DE DATA SEGÚN LIGA
+# INICIALIZAR SESSION_STATE PARA LOS CAMPOS QUE RELLENAMOS
+# =========================================================
+for key in [
+    "l_anota_global", "l_permite_global",
+    "v_anota_global", "v_permite_global"
+]:
+    if key not in st.session_state:
+        st.session_state[key] = 0.0
+
+# =========================================================
+# 1) CARGA DATA NFL
 # =========================================================
 nfl_data = {}
 if liga == "NFL":
@@ -124,15 +121,15 @@ with col1:
     st.markdown("**Promedios GLOBAL del LOCAL**")
     l_anota_global = st.number_input(
         "Local: puntos que ANOTA (global)",
-        value=st.session_state.get("l_anota_global", 0.0),
+        value=st.session_state["l_anota_global"],
         step=0.1,
-        key="l_anota_global_input",
+        key="l_anota_global"
     )
     l_permite_global = st.number_input(
         "Local: puntos que PERMITE (global)",
-        value=st.session_state.get("l_permite_global", 0.0),
+        value=st.session_state["l_permite_global"],
         step=0.1,
-        key="l_permite_global_input",
+        key="l_permite_global"
     )
 
 with col2:
@@ -149,15 +146,15 @@ with col2:
     st.markdown("**Promedios GLOBAL del VISITA**")
     v_anota_global = st.number_input(
         "Visita: puntos que ANOTA (global)",
-        value=st.session_state.get("v_anota_global", 0.0),
+        value=st.session_state["v_anota_global"],
         step=0.1,
-        key="v_anota_global_input",
+        key="v_anota_global"
     )
     v_permite_global = st.number_input(
         "Visita: puntos que PERMITE (global)",
-        value=st.session_state.get("v_permite_global", 0.0),
+        value=st.session_state["v_permite_global"],
         step=0.1,
-        key="v_permite_global_input",
+        key="v_permite_global"
     )
 
 # =========================================================
@@ -179,12 +176,11 @@ hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 # =========================================================
 st.subheader("3) Ajuste por lesiones / forma")
 
-# valores suaves, realistas
 perfil_opciones = {
     "Healthy / completo": 1.00,
-    "1–2 bajas importantes": 0.95,     # -5%
-    "Varias bajas / QB tocado": 0.90,  # -10%
-    "En buen momento ofensivo": 1.05,  # +5%
+    "1–2 bajas importantes": 0.95,
+    "Varias bajas / QB tocado": 0.90,
+    "En buen momento ofensivo": 1.05,
 }
 
 c3, c4 = st.columns(2)
@@ -206,7 +202,7 @@ st.subheader("4) Proyección del modelo")
 pts_local_global = proyeccion_puntos(l_anota_global, v_permite_global, es_local=True) * mult_local
 pts_visita_global = proyeccion_puntos(v_anota_global, l_permite_global, es_local=False) * mult_visita
 total_global = pts_local_global + pts_visita_global
-spread_global = pts_local_global - pts_visita_global  # + = local arriba
+spread_global = pts_local_global - pts_visita_global
 
 st.markdown("🟦 **GLOBAL**")
 st.write(f"• {local or 'LOCAL'} : **{pts_local_global:.1f} pts**")
@@ -237,7 +233,7 @@ else:
     st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
 
 # =========================================================
-# 6) LÍNEA DEL CASINO + ALERTA DE TRAP
+# 6) LÍNEA DEL CASINO + ALERTA
 # =========================================================
 st.subheader("5) Línea del casino y diferencias")
 
@@ -247,21 +243,18 @@ with c5:
 with c6:
     total_casa = st.number_input("Total (O/U) del casino", 0.0, 350.0, 0.0, 0.5)
 
-# diferencias GLOBAL
-modelo_spread_formato_casa = -spread_global  # tu modelo en el mismo formato que la casa
+modelo_spread_formato_casa = -spread_global
 dif_spread_global = modelo_spread_formato_casa - spread_casa
 dif_total_global = total_global - total_casa
 
 st.write(f"🟦 **DIF. SPREAD (GLOBAL):** {dif_spread_global:+.1f} pts")
 st.write(f"🟦 **DIF. TOTAL (GLOBAL):** {dif_total_global:+.1f} pts")
 
-# alerta de trap line
 if abs(dif_spread_global) >= 5:
-    st.error("⚠️ Posible trap line: tu modelo y la casa están MUY lejos. Revisa lesiones, clima o noticias.")
+    st.error("⚠️ Posible trap line: modelo y casa están muy lejos. Revisa lesiones/noticias.")
 elif abs(dif_spread_global) >= 3:
-    st.warning("⚠️ Tu modelo no coincide con la casa. Puede ser oportunidad o puede haber info que no tienes.")
+    st.warning("⚠️ Modelo y casa no coinciden mucho. Puede ser oportunidad o info faltante.")
 
-# CASA/VISITA si existe
 if hay_cv:
     modelo_spread_cv_formato_casa = -spread_cv
     dif_spread_cv = modelo_spread_cv_formato_casa - spread_casa
@@ -270,7 +263,7 @@ if hay_cv:
     st.write(f"🟩 **DIF. TOTAL (CASA/VISITA):** {dif_total_cv:+.1f} pts")
 
 # =========================================================
-# 5b) MONEYLINE (opcional) + COMPARATIVA
+# 5b) MONEYLINE
 # =========================================================
 st.subheader("5b) Moneyline del sportsbook (opcional)")
 c_ml1, c_ml2 = st.columns(2)
@@ -286,10 +279,9 @@ if ml_local != 0 and ml_visita != 0:
     st.write(f"Prob. implícita LOCAL: **{prob_imp_local:.1f}%**, Prob. implícita VISITA: **{prob_imp_visita:.1f}%**")
 
 # =========================================================
-# 6) SIMULACIÓN MONTE CARLO (GLOBAL)
+# 6) MONTE CARLO GLOBAL
 # =========================================================
 st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
-
 num_sims_global = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
 desv_global = config_desviacion_por_liga(liga, total_global)
 
@@ -301,15 +293,10 @@ for _ in range(num_sims_global):
     sim_local = max(0, random.gauss(pts_local_global, desv_global))
     sim_visita = max(0, random.gauss(pts_visita_global, desv_global))
 
-    # ¿cubre el LOCAL el spread de la casa?
     if (sim_local - sim_visita) + spread_casa >= 0:
         covers += 1
-
-    # OVER
     if (sim_local + sim_visita) > total_casa:
         overs += 1
-
-    # victoria directa del LOCAL según el modelo
     if sim_local > sim_visita:
         wins_local += 1
 
@@ -322,7 +309,7 @@ st.write(f"Prob. de que **{local or 'LOCAL'}** cubra el spread (GLOBAL): **{prob
 st.write(f"Prob. de OVER (GLOBAL): **{prob_over_global:.1f}%**")
 
 # =========================================================
-# 6b) SIMULACIÓN MONTE CARLO (CASA / VISITA)
+# 6b) MONTE CARLO CASA/VISITA
 # =========================================================
 st.subheader("6b) Simulación Monte Carlo 🟩 (CASA / VISITA)")
 prob_cover_local_cv = None
@@ -336,12 +323,10 @@ if hay_cv:
     for _ in range(num_sims_cv):
         sim_l = max(0, random.gauss(pts_local_cv, desv_cv))
         sim_v = max(0, random.gauss(pts_visita_cv, desv_cv))
-
         if (sim_l - sim_v) + spread_casa >= 0:
             covers_cv += 1
         if (sim_l + sim_v) > total_casa:
             overs_cv += 1
-
     prob_cover_local_cv = covers_cv / num_sims_cv * 100
     prob_over_cv = overs_cv / num_sims_cv * 100
     st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (CASA/VISITA): **{prob_cover_local_cv:.1f}%**")
@@ -350,29 +335,9 @@ else:
     st.info("Para correr esta simulación llena los campos de casa/visita.")
 
 # =========================================================
-# 6c) Simulación discreta (experimental, fácil de entender)
-# =========================================================
-with st.expander("🔬 Simulación discreta (experimental)"):
-    st.caption("Esto intenta simular marcador como conteo de puntos. Es una segunda opinión, no reemplaza al Monte Carlo principal.")
-    sims = 3000
-    wins_local_disc = 0
-    for _ in range(sims):
-        # Poisson aproximado: media = puntos proyectados, pero no dejamos que explote
-        lam_l = max(0.1, pts_local_global)
-        lam_v = max(0.1, pts_visita_global)
-        # generamos con suma de exponenciales burda (sin numpy)
-        # para no complicar al principiante, hacemos un redondeo gauss discreto
-        pl = max(0, int(random.gauss(lam_l, 3)))
-        pv = max(0, int(random.gauss(lam_v, 3)))
-        if pl > pv:
-            wins_local_disc += 1
-    st.write(f"Prob. de victoria LOCAL (discreto): **{wins_local_disc / sims * 100:.1f}%**")
-
-# =========================================================
-# 5c) COMPARATIVA MODELO vs CASINO (para que el principiante vea claro)
+# 5c) COMPARATIVA MODELO VS CASINO
 # =========================================================
 st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
-
 col_cm1, col_cm2 = st.columns(2)
 with col_cm1:
     st.write(f"{local or 'LOCAL'} (modelo): **{prob_win_local_model:.1f}%**")
@@ -380,33 +345,29 @@ with col_cm2:
     st.write(f"{visita or 'VISITA'} (modelo): **{prob_win_visita_model:.1f}%**")
 
 if ml_local != 0 and ml_visita != 0:
-    # aquí detectamos value
     value_msgs = []
     if prob_win_local_model > prob_imp_local + 5:
         value_msgs.append(f"✅ Posible value en **{local or 'LOCAL'} ML** (modelo {prob_win_local_model:.1f}% vs casa {prob_imp_local:.1f}%)")
     if prob_win_visita_model > prob_imp_visita + 5:
         value_msgs.append(f"✅ Posible value en **{visita or 'VISITA'} ML** (modelo {prob_win_visita_model:.1f}% vs casa {prob_imp_visita:.1f}%)")
-
     if value_msgs:
         for m in value_msgs:
             st.success(m)
     else:
-        st.info("No se detectó value claro en moneylines (modelo y casa están parecidos).")
+        st.info("No se detectó value claro en moneylines.")
 else:
-    st.caption("Si metes los moneylines de la casa aquí te aviso si tu modelo ve más probabilidad que el casino.")
+    st.caption("Si metes moneylines aquí te digo si tu modelo ve más probabilidad que la casa.")
 
 # =========================================================
 # 7) APUESTAS RECOMENDADAS
 # =========================================================
 st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
-
 recs = []
 
 # spread global
 if prob_cover_local_global >= 55:
     recs.append(f"Spread GLOBAL: {local or 'LOCAL'} {spread_casa:+.1f} — {prob_cover_local_global:.1f}%")
 elif (100 - prob_cover_local_global) >= 55:
-    # quiere decir que el modelo ve que la visita tiene valor con el spread opuesto
     visita_linea = -spread_casa
     recs.append(f"Spread GLOBAL: {visita or 'VISITA'} {visita_linea:+.1f} — {100 - prob_cover_local_global:.1f}%")
 
@@ -417,7 +378,7 @@ if prob_over_global >= 55:
 elif prob_under_global >= 55:
     recs.append(f"Total GLOBAL: UNDER {total_casa:.1f} — {prob_under_global:.1f}%")
 
-# casa / visita si la hay
+# casa/visita
 if hay_cv and prob_cover_local_cv is not None:
     if prob_cover_local_cv >= 55:
         recs.append(f"Spread CASA/VISITA: {local or 'LOCAL'} {spread_casa:+.1f} — {prob_cover_local_cv:.1f}%")
