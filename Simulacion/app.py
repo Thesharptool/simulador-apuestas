@@ -197,6 +197,8 @@ if hay_cv:
         f"Spread casa/visita: **{spread_cv:+.1f}**"
     )
 else:
+    total_cv = None
+    spread_cv = None
     st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
 
 # =========================================================
@@ -210,23 +212,27 @@ with c6:
     total_casa = st.number_input("Total (O/U del casino)", 0.0, 300.0, 0.0, 0.5)
 
 # =========================================================
-# 6.b DIFERENCIAS VS LÍNEA (lo que pediste)
+# 6.b DIFERENCIAS VS LÍNEA
 # =========================================================
 st.subheader("Diferencias vs la línea del casino")
 
-# GLOBAL
-# modelo da spread = local - visita
-# la casa da spread = “cuántos puntos le quitamos al LOCAL”
-# para comparar: pasamos nuestro spread a formato casa:
+# SPREAD GLOBAL
 modelo_spread_formato_casa = -spread
 dif_spread_global = modelo_spread_formato_casa - spread_casa
 st.write(f"🟦 Dif. SPREAD (GLOBAL): **{dif_spread_global:+.1f} pts**")
 
-# CASA / VISITA
-if hay_cv:
+# TOTAL GLOBAL
+dif_total_global = total - total_casa
+st.write(f"🟦 Dif. TOTAL (GLOBAL): **{dif_total_global:+.1f} pts**")
+
+# SPREAD / TOTAL CASA-VISITA
+if hay_cv and total_cv is not None:
     modelo_spread_cv_formato_casa = -spread_cv
     dif_spread_cv = modelo_spread_cv_formato_casa - spread_casa
     st.write(f"🟩 Dif. SPREAD (CASA/VISITA): **{dif_spread_cv:+.1f} pts**")
+
+    dif_total_cv = total_cv - total_casa
+    st.write(f"🟩 Dif. TOTAL (CASA/VISITA): **{dif_total_cv:+.1f} pts**")
 
 # =========================================================
 # 7. MONTE CARLO GLOBAL
@@ -260,7 +266,7 @@ st.subheader("Simulación Monte Carlo 🟩 (CASA / VISITA)")
 prob_cover_cv = None
 prob_over_cv = None
 
-if hay_cv:
+if hay_cv and total_cv is not None:
     num_sims_cv = st.slider("Número de simulaciones (CASA/VISITA)", 1000, 50000, 10000, 1000, key="cv_sims")
     desv_cv = max(5, total_cv * 0.15)
     covers_cv, overs_cv = 0, 0
