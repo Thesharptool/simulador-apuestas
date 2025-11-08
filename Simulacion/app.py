@@ -168,24 +168,36 @@ with c2:
 hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 
 # =========================================================
-# 4) AJUSTE POR LESIONES / FORMA (con etiquetas)
+# 4) AJUSTE POR LESIONES / FORMA (más realista)
 # =========================================================
-st.subheader("3) Ajuste por lesiones / QB / forma")
+st.subheader("3) Ajuste por lesiones / forma")
 
 def option_to_multiplier(opt: str) -> float:
-    if "Muy lesionado" in opt:
-        return 0.70   # -30%
-    if "Lesionado" in opt:
-        return 0.85   # -15%
+    # valores más parecidos a cómo se “raspa” una ofensiva en libros
+    if "Seleccionado" in opt:
+        # por si se te va una tilde 😅
+        return 0.97
+    if "Lesión ligera" in opt:
+        return 0.97          # -3%
+    if "Baja importante" in opt:
+        return 0.93          # -7%
+    if "Varias bajas" in opt:
+        return 0.88          # -12%
     if "En buen momento" in opt:
-        return 1.10   # +10%
-    return 1.00       # healthy
+        return 1.04          # +4%
+    return 1.00              # healthy
 
 col_adj1, col_adj2 = st.columns(2)
 with col_adj1:
     opt_local = st.selectbox(
         "Estado ofensivo LOCAL",
-        ["Healthy (1.00)", "Lesionado (-15%)", "Muy lesionado (-30%)", "En buen momento (+10%)"],
+        [
+            "Healthy / sin reporte (1.00)",
+            "Lesión ligera / 1 baja no clave (-3%)",
+            "Baja importante (QB, WR1, LT) (-7%)",
+            "Varias bajas ofensivas (-12%)",
+            "En buen momento (+4%)",
+        ],
         index=0
     )
     mult_local = option_to_multiplier(opt_local)
@@ -193,7 +205,13 @@ with col_adj1:
 with col_adj2:
     opt_visita = st.selectbox(
         "Estado ofensivo VISITA",
-        ["Healthy (1.00)", "Lesionado (-15%)", "Muy lesionado (-30%)", "En buen momento (+10%)"],
+        [
+            "Healthy / sin reporte (1.00)",
+            "Lesión ligera / 1 baja no clave (-3%)",
+            "Baja importante (QB, WR1, LT) (-7%)",
+            "Varias bajas ofensivas (-12%)",
+            "En buen momento (+4%)",
+        ],
         index=0
     )
     mult_visita = option_to_multiplier(opt_visita)
