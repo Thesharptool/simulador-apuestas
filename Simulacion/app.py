@@ -3,7 +3,7 @@ import random
 import requests
 
 # =========================================================
-# CONFIG INICIAL
+# CONFIGURACIÓN GENERAL
 # =========================================================
 st.set_page_config(page_title="Simulador de Apuestas", layout="wide")
 
@@ -16,29 +16,29 @@ Si llenas casa/visita te muestra las dos proyecciones.
 """)
 
 # =========================================================
-# 0) ¿QUÉ QUIERES SIMULAR?
+# 0. ELEGIR DEPORTE
 # =========================================================
-liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
+deporte = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
 
 # =========================================================
-# 0.a) NFL: cargar standings de SportsDataIO
+# 0b. CARGA NFL DESDE SPORTSDATAIO (solo si NFL)
 # =========================================================
-NFL_API_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"   # la tuya
-NFL_SEASON = "2025REG"
+NFL_API_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"
+NFL_SEASON = "2025REG"   # lo estabas usando así
 
 @st.cache_data(ttl=600)
 def cargar_nfl_desde_api(api_key: str, season: str):
     url = f"https://api.sportsdata.io/v3/nfl/scores/json/Standings/{season}"
     headers = {"Ocp-Apim-Subscription-Key": api_key}
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
-        if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO"
-        data = resp.json()
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code != 200:
+            return {}, f"Error {r.status_code} al conectar con SportsDataIO"
+        data = r.json()
     except Exception as e:
         return {}, f"Error de conexión: {e}"
 
-    nfl_teams = {}
+    equipos = {}
     for t in data:
         name = (t.get("Name") or "").lower()
         wins = t.get("Wins", 0) or 0
@@ -47,106 +47,43 @@ def cargar_nfl_desde_api(api_key: str, season: str):
         pf = t.get("PointsFor", 0.0) or 0.0
         pa = t.get("PointsAgainst", 0.0) or 0.0
 
-        played = wins + losses + ties
+        jugados = wins + losses + ties
         games_raw = t.get("Games", 0) or 0
-        games_played = played if played > 0 else games_raw if games_raw > 0 else 1
+        games_played = jugados if jugados > 0 else (games_raw if games_raw > 0 else 1)
 
-        nfl_teams[name] = {
+        equipos[name] = {
             "pf_pg": round(pf / games_played, 2),
             "pa_pg": round(pa / games_played, 2),
         }
-    return nfl_teams, ""
+    return equipos, ""
 
-# =========================================================
-# 0.b) NBA: cargar ratings de Basketball Reference
-# =========================================================
-@st.cache_data(ttl=600)
-def cargar_nba_ratings(season_year: int = 2025):
-    """
-    Trae la tabla de https://www.basketball-reference.com/leagues/NBA_2025_ratings.html
-    y la convierte en dict {team_lower: {pace, ortg, drtg}}.
-    Si falla, regresa {} y un mensaje.
-    """
-    import pandas as pd
-
-    url = f"https://www.basketball-reference.com/leagues/NBA_{season_year}_ratings.html"
-    try:
-        tables = pd.read_html(url)
-        df = tables[0]
-    except Exception as e:
-        return {}, f"No se pudo leer Basketball Reference: {e}"
-
-    # columnas típicas: 'Team', 'Pace', 'ORtg', 'DRtg'
-    ratings = {}
-    for _, row in df.iterrows():
-        team = str(row.get("Team", "")).lower()
-        if team and team != "league average":
-            pace = float(row.get("Pace", 100))
-            ortg = float(row.get("ORtg", 110))
-            drtg = float(row.get("DRtg", 110))
-            # estimación súper simple de puntos por partido:
-            # ppp = pace * ortg / 100
-            pf_pg = round(pace * ortg / 100, 1)
-            pa_pg = round(pace * drtg / 100, 1)
-            ratings[team] = {
-                "pace": pace,
-                "ortg": ortg,
-                "drtg": drtg,
-                "pf_pg": pf_pg,
-                "pa_pg": pa_pg,
-            }
-    return ratings, ""
-
-# =========================================================
-# CARGAS SEGÚN LIGA
-# =========================================================
 nfl_data = {}
-nfl_error = ""
-nba_data = {}
-nba_error = ""
-
-if liga == "NFL":
-    nfl_data, nfl_error = cargar_nfl_desde_api(NFL_API_KEY, NFL_SEASON)
-    if nfl_error:
-        st.warning(f"⚠️ {nfl_error}")
+if deporte == "NFL":
+    nfl_data, nfl_err = cargar_nfl_desde_api(NFL_API_KEY, NFL_SEASON)
+    if nfl_err:
+        st.warning(f"⚠️ {nfl_err}")
     else:
         st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
 else:
-    nba_data, nba_error = cargar_nba_ratings(2025)
-    if nba_error:
-        st.warning(f"⚠️ {nba_error}")
-    else:
-        st.success(f"✅ Ratings NBA cargados automáticamente (Basketball Reference) — {len(nba_data)} equipos")
-
+    st.info("📘 NBA: no hay carga automática, llena los promedios manualmente.")
 
 # =========================================================
-# 1) DATOS DEL PARTIDO
+# 1. DATOS DEL PARTIDO
 # =========================================================
 st.subheader("1) Datos del partido")
 col1, col2 = st.columns(2)
 
 with col1:
-    local = st.text_input("Equipo LOCAL", "", key="local_name")
-
-    # botón según liga
-    if liga == "NFL":
+    local = st.text_input("Equipo LOCAL", key="local_name")
+    if deporte == "NFL":
         if st.button("Rellenar LOCAL desde NFL"):
-            lookup = local.strip().lower()
-            if lookup in nfl_data:
-                st.session_state["l_anota_global"] = nfl_data[lookup]["pf_pg"]
-                st.session_state["l_permite_global"] = nfl_data[lookup]["pa_pg"]
+            key = local.strip().lower()
+            if key in nfl_data:
+                st.session_state["l_anota_global"] = nfl_data[key]["pf_pg"]
+                st.session_state["l_permite_global"] = nfl_data[key]["pa_pg"]
                 st.success(f"LOCAL rellenado con datos reales de {local}")
             else:
                 st.error("No encontré ese equipo en NFL")
-    else:
-        if st.button("Rellenar LOCAL desde NBA"):
-            lookup = local.strip().lower()
-            if lookup in nba_data:
-                st.session_state["l_anota_global"] = nba_data[lookup]["pf_pg"]
-                st.session_state["l_permite_global"] = nba_data[lookup]["pa_pg"]
-                st.success(f"LOCAL rellenado con ratings de {local}")
-            else:
-                st.error("No encontré ese equipo en NBA (revisa el nombre tal cual sale en Basketball Reference)")
 
     st.markdown("**Promedios GLOBAL del LOCAL**")
     l_anota_global = st.number_input(
@@ -163,26 +100,16 @@ with col1:
     )
 
 with col2:
-    visita = st.text_input("Equipo VISITA", "", key="visita_name")
-
-    if liga == "NFL":
+    visita = st.text_input("Equipo VISITA", key="visita_name")
+    if deporte == "NFL":
         if st.button("Rellenar VISITA desde NFL"):
-            lookup = visita.strip().lower()
-            if lookup in nfl_data:
-                st.session_state["v_anota_global"] = nfl_data[lookup]["pf_pg"]
-                st.session_state["v_permite_global"] = nfl_data[lookup]["pa_pg"]
+            key = visita.strip().lower()
+            if key in nfl_data:
+                st.session_state["v_anota_global"] = nfl_data[key]["pf_pg"]
+                st.session_state["v_permite_global"] = nfl_data[key]["pa_pg"]
                 st.success(f"VISITA rellenado con datos reales de {visita}")
             else:
                 st.error("No encontré ese equipo en NFL")
-    else:
-        if st.button("Rellenar VISITA desde NBA"):
-            lookup = visita.strip().lower()
-            if lookup in nba_data:
-                st.session_state["v_anota_global"] = nba_data[lookup]["pf_pg"]
-                st.session_state["v_permite_global"] = nba_data[lookup]["pa_pg"]
-                st.success(f"VISITA rellenado con ratings de {visita}")
-            else:
-                st.error("No encontré ese equipo en NBA")
 
     st.markdown("**Promedios GLOBAL del VISITA**")
     v_anota_global = st.number_input(
@@ -199,7 +126,7 @@ with col2:
     )
 
 # =========================================================
-# 2) CASA / VISITA (manual, lo dejamos en blanco)
+# 2. CASA / VISITA (manual)
 # =========================================================
 st.subheader("2) Promedios por condición (opcional)")
 c1, c2 = st.columns(2)
@@ -213,101 +140,96 @@ with c2:
 hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 
 # =========================================================
-# 3) AJUSTE POR LESIONES / FORMA
-# NFL: toggle de QB titular
-# NBA: lo dejamos como “estado ofensivo” nada más
+# 2b. FACTORES AVANZADOS NBA (nuevo)
+# =========================================================
+if deporte == "NBA":
+    st.subheader("2b) Factores avanzados NBA (pace / eficiencia)")
+    st.markdown("Llena estos datos para que el total de NBA se acerque más a las líneas reales.")
+
+    colA, colB, colC = st.columns(3)
+    with colA:
+        pace_local = st.number_input("Pace LOCAL (posesiones)", value=98.0, step=0.1)
+    with colB:
+        pace_visita = st.number_input("Pace VISITA", value=98.0, step=0.1)
+    with colC:
+        pace_liga = st.number_input("Pace promedio liga", value=99.0, step=0.1)
+
+    colO, colD = st.columns(2)
+    with colO:
+        off_eff_local = st.number_input("Ofensiva LOCAL (pts/100 poss)", value=112.0, step=0.1)
+    with colD:
+        def_eff_visita = st.number_input("Defensiva VISITA (pts permitidos/100 poss)", value=112.0, step=0.1)
+
+# =========================================================
+# 3. AJUSTE POR LESIONES / FORMA / QB
 # =========================================================
 st.subheader("3) Ajuste por lesiones / forma")
 
-c3, c4 = st.columns(2)
-
-if liga == "NFL":
-    with c3:
-        qb_juega = st.checkbox("¿Juega el QB titular del LOCAL?", value=True)
-        estado_local = st.selectbox(
-            "Estado ofensivo LOCAL",
-            ["Healthy / completo", "1–2 bajas importantes", "Varias bajas"],
-            index=0,
-        )
-    with c4:
-        qb_juega_v = st.checkbox("¿Juega el QB titular del VISITA?", value=True)
-        estado_visita = st.selectbox(
-            "Estado ofensivo VISITA",
-            ["Healthy / completo", "1–2 bajas importantes", "Varias bajas"],
-            index=0,
-            key="estado_visita",
-        )
-
-    def mult_desde_estado(estado, qb_ok=True):
-        base = 1.0
-        if estado == "1–2 bajas importantes":
-            base -= 0.03
-        elif estado == "Varias bajas":
-            base -= 0.06
-        # impacto de QB
-        if not qb_ok:
-            base -= 0.10   # -10% si no juega el QB titular
-        return max(0.7, base)
-
-    mult_local = mult_desde_estado(estado_local, qb_ok=qb_juega)
-    mult_visita = mult_desde_estado(estado_visita, qb_ok=qb_juega_v)
-
+if deporte == "NFL":
+    colL, colV = st.columns(2)
+    with colL:
+        qb_local_fuera = st.checkbox("¿QB titular LOCAL no juega?", value=False)
+    with colV:
+        qb_visita_fuera = st.checkbox("¿QB titular VISITA no juega?", value=False)
+    # multiplicadores NFL
+    mult_local = 1.0 - (0.12 if qb_local_fuera else 0.0)
+    mult_visita = 1.0 - (0.12 if qb_visita_fuera else 0.0)
 else:
-    # NBA: ajuste simple
-    with c3:
-        estado_local = st.selectbox(
-            "Estado ofensivo LOCAL (NBA)",
-            ["Normal", "Sin una estrella", "Back-to-back / cansados"],
-            index=0,
-        )
-    with c4:
-        estado_visita = st.selectbox(
-            "Estado ofensivo VISITA (NBA)",
-            ["Normal", "Sin una estrella", "Back-to-back / cansados"],
-            index=0,
-            key="estado_visita_nba",
-        )
+    # NBA: solo forma general
+    colL, colV = st.columns(2)
+    with colL:
+        estado_local = st.selectbox("Estado ofensivo LOCAL (NBA)", ["Normal", "Ligera baja", "Muy tocado"], index=0)
+    with colV:
+        estado_visita = st.selectbox("Estado ofensivo VISITA (NBA)", ["Normal", "Ligera baja", "Muy tocado"], index=0)
 
     def mult_nba(estado):
         if estado == "Normal":
             return 1.0
-        elif estado == "Sin una estrella":
-            return 0.94
-        else:
+        elif estado == "Ligera baja":
             return 0.97
+        else:
+            return 0.93
 
     mult_local = mult_nba(estado_local)
     mult_visita = mult_nba(estado_visita)
 
-st.caption("Estos multiplicadores afectan a los puntos proyectados. 1.00 = normal.")
+st.caption("Estos multiplicadores afectan a los puntos proyectados.")
 
 # =========================================================
-# 4) FUNCIÓN DEL MODELO
+# 4. FUNCIÓN DE PROYECCIÓN
 # =========================================================
 def proyeccion(ofensiva, defensa, es_local=False):
     base = 0.55 * ofensiva + 0.35 * defensa
     if es_local:
-        base += 1.5  # pequeña ventaja local
+        base += 1.5 if deporte == "NFL" else 1.0
     return base
 
 # =========================================================
-# 4) PROYECCIÓN DEL MODELO
+# 4. PROYECCIÓN DEL MODELO
 # =========================================================
 st.subheader("4) Proyección del modelo")
 
 # GLOBAL
-pts_local = proyeccion(l_anota_global, v_permite_global, True) * mult_local
-pts_visita = proyeccion(v_anota_global, l_permite_global, False) * mult_visita
-total_modelo = pts_local + pts_visita
-spread_modelo = pts_local - pts_visita  # positivo = local mejor
+pts_local_global = proyeccion(l_anota_global, v_permite_global, True) * mult_local
+pts_visita_global = proyeccion(v_anota_global, l_permite_global, False) * mult_visita
+total_global = pts_local_global + pts_visita_global
+spread_global = pts_local_global - pts_visita_global  # + = gana LOCAL
+
+# ajuste NBA por pace (suave)
+if deporte == "NBA":
+    try:
+        pace_factor = (pace_local + pace_visita) / 2 / pace_liga
+        total_global = total_global * pace_factor
+    except Exception:
+        pass
 
 st.markdown("🟦 **GLOBAL**")
-st.write(f"- {local or 'LOCAL'}: **{pts_local:.1f} pts**")
-st.write(f"- {visita or 'VISITA'}: **{pts_visita:.1f} pts**")
-st.write(f"- Total modelo: **{total_modelo:.1f}**")
-st.write(f"- Spread modelo (local - visita): **{spread_modelo:+.1f}**")
+st.write(f"- {local or 'LOCAL'} : **{pts_local_global:.1f} pts**")
+st.write(f"- {visita or 'VISITA'} : **{pts_visita_global:.1f} pts**")
+st.write(f"- Total modelo: **{total_global:.1f}**")
+st.write(f"- Spread modelo (local - visita): **{spread_global:+.1f}**")
 
-# CASA / VISITA si hay datos
+# CASA / VISITA
 st.markdown("🟩 **CASA / VISITA**")
 if hay_cv:
     pts_local_cv = proyeccion(
@@ -323,114 +245,122 @@ if hay_cv:
     total_cv = pts_local_cv + pts_visita_cv
     spread_cv = pts_local_cv - pts_visita_cv
 
-    st.write(f"- {local or 'LOCAL'} (casa): **{pts_local_cv:.1f}**")
-    st.write(f"- {visita or 'VISITA'} (visita): **{pts_visita_cv:.1f}**")
+    st.write(f"- {local or 'LOCAL'} (c/v): **{pts_local_cv:.1f} pts**")
+    st.write(f"- {visita or 'VISITA'} (c/v): **{pts_visita_cv:.1f} pts**")
     st.write(f"- Total (c/v): **{total_cv:.1f}**")
     st.write(f"- Spread (c/v): **{spread_cv:+.1f}**")
 else:
     st.info("Si llenas los 4 campos de casa/visita, te muestro también esa proyección.")
 
 # =========================================================
-# 5) LÍNEA DEL CASINO Y DIFERENCIAS
+# 5. LÍNEA DEL CASINO Y DIFERENCIAS
 # =========================================================
 st.subheader("5) Línea del casino y diferencias")
 c5, c6 = st.columns(2)
 with c5:
-    spread_casa = st.number_input("Spread del casino (negativo si LOCAL favorito)", -50.0, 50.0, 0.0, 0.5)
+    spread_casa = st.number_input("Spread del casino (negativo si LOCAL favorito)", value=0.0, step=0.5)
 with c6:
-    total_casa = st.number_input("Total (O/U) del casino", 0.0, 300.0, 0.0, 0.5)
+    total_casa = st.number_input("Total (O/U) del casino", value=0.0, step=0.5)
 
-st.markdown("🔍 **Comparación de spreads (GLOBAL)**")
-modelo_spread_formato_casa = -spread_modelo
-st.write(f"- Modelo (formato casa): **LOCAL {modelo_spread_formato_casa:+.1f}**")
-st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
-dif_spread_global = modelo_spread_formato_casa - spread_casa
-st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread_global:+.1f} pts**")
+with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
+    modelo_formato_casa = -spread_global
+    st.write(f"- Modelo (formato casa): **LOCAL {modelo_formato_casa:+.1f}**")
+    st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
+    dif_spread_global = modelo_formato_casa - spread_casa
+    st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread_global:+.1f} pts**")
 
-st.markdown("🔍 **Comparación de totales (GLOBAL)**")
-st.write(f"- Modelo: **{total_modelo:.1f}**")
-st.write(f"- Casa: **{total_casa:.1f}**")
-dif_total_global = total_modelo - total_casa
-st.write(f"- **DIF. TOTAL (GLOBAL): {dif_total_global:+.1f} pts**")
+with st.expander("🔍 Comparación de totales (GLOBAL)", expanded=True):
+    st.write(f"- Modelo: **{total_global:.1f}**")
+    st.write(f"- Casa: **{total_casa:.1f}**")
+    dif_total_global = total_global - total_casa
+    st.write(f"- **DIF. TOTAL (GLOBAL): {dif_total_global:+.1f} pts**")
 
-# alerta específica
-if abs(dif_spread_global) >= 3 and abs(dif_total_global) >= 10:
-    st.error("⚠️ Línea muy diferente a tu modelo (spread y total). Puede ser trap line o te falta info.")
-else:
-    if abs(dif_spread_global) >= 3:
-        st.error("⚠️ Línea muy diferente a tu modelo **en el spread**. Puede ser trap line o te falta info.")
-    elif abs(dif_total_global) >= (12 if liga == "NBA" else 8):
-        st.error("⚠️ Línea muy diferente a tu modelo **en el total**. Puede ser trap line o te falta info.")
+alertas = []
+if abs(dif_spread_global) >= 3.0:
+    alertas.append("spread")
+if abs(dif_total_global) >= 12.0 and deporte == "NBA":
+    alertas.append("total")
+if abs(dif_total_global) >= 8.0 and deporte == "NFL":
+    alertas.append("total")
+
+if alertas:
+    txt = " y ".join(alertas)
+    st.error(f"⚠️ Línea muy diferente a tu modelo ({txt}). Puede ser trap line o info que no estás metiendo.")
 
 # =========================================================
-# 5b) MONEYLINE DEL SPORTSBOOK (opcional)
+# 5b. MONEYLINE (opcional)
 # =========================================================
 st.subheader("5b) Moneyline del sportsbook (opcional)")
-c7, c8 = st.columns(2)
-with c7:
-    ml_local = st.number_input("Moneyline LOCAL (americano)", value=0.0, step=5.0)
-with c8:
-    ml_visita = st.number_input("Moneyline VISITA (americano)", value=0.0, step=5.0)
+cML1, cML2 = st.columns(2)
+with cML1:
+    ml_local = st.number_input("Moneyline LOCAL (americano)", value=0)
+with cML2:
+    ml_visita = st.number_input("Moneyline VISITA (americano)", value=0)
 
-def ml_to_prob(ml):
+def american_to_prob(ml):
     if ml == 0:
-        return None
+        return 0.0
     if ml > 0:
         return 100 / (ml + 100)
     else:
         return -ml / (-ml + 100)
 
-prob_imp_local = ml_to_prob(ml_local)
-prob_imp_visita = ml_to_prob(ml_visita)
-
-st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
-# prob de victoria del modelo -> lo saco del spread del modelo con una sigmoide suave
-import math
-def prob_from_spread(spread_points):
-    # spread_points positivo = local mejor
-    # 6 pts ~ 70%, 3 pts ~ 60%
-    return 1 / (1 + math.exp(-0.35 * spread_points))
-
-prob_modelo_local = prob_from_spread(spread_modelo) * 100
-prob_modelo_visita = 100 - prob_modelo_local
-
-st.write(f"{local or 'LOCAL'} (modelo): **{prob_modelo_local:.1f}%**")
-st.write(f"{visita or 'VISITA'} (modelo): **{prob_modelo_visita:.1f}%**")
-if prob_imp_local is not None:
-    st.write(f"Prob. implícita LOCAL (casa): **{prob_imp_local*100:.1f}%**")
-if prob_imp_visita is not None:
-    st.write(f"Prob. implícita VISITA (casa): **{prob_imp_visita*100:.1f}%**")
+imp_local = american_to_prob(ml_local) * 100
+imp_visita = american_to_prob(ml_visita) * 100
+st.write(f"Prob. implícita LOCAL: **{imp_local:.1f}%**, Prob. implícita VISITA: **{imp_visita:.1f}%**")
 
 # =========================================================
-# 6) SIMULACIÓN MONTE CARLO (GLOBAL)
+# 5c. COMPARATIVA MODELO vs CASINO (solo con ML)
+# =========================================================
+st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
+# prob modelo por puntos: si el modelo da más puntos al local, le damos prob alta
+if pts_local_global + 0.01 > pts_visita_global:
+    prob_modelo_local = 60.0
+    prob_modelo_visita = 40.0
+else:
+    prob_modelo_local = 40.0
+    prob_modelo_visita = 60.0
+
+colM1, colM2 = st.columns(2)
+with colM1:
+    st.write(f"{local or 'LOCAL'} (modelo): **{prob_modelo_local:.1f}%**")
+    st.write(f"{visita or 'VISITA'} (modelo): **{prob_modelo_visita:.1f}%**")
+with colM2:
+    st.write(f"Prob. implícita LOCAL (casa): **{imp_local:.1f}%**")
+    st.write(f"Prob. implícita VISITA (casa): **{imp_visita:.1f}%**")
+
+# =========================================================
+# 6. MONTE CARLO GLOBAL
 # =========================================================
 st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
-num_sims = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
-desv = max(5, total_modelo * 0.15)
-covers, overs = 0, 0
-for _ in range(num_sims):
-    sim_l = max(0, random.gauss(pts_local, desv))
-    sim_v = max(0, random.gauss(pts_visita, desv))
+num_sims_global = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
+
+covers = 0
+overs = 0
+desv_global = max(5, total_global * 0.15)
+
+for _ in range(num_sims_global):
+    sim_l = max(0, random.gauss(pts_local_global, desv_global))
+    sim_v = max(0, random.gauss(pts_visita_global, desv_global))
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
     if (sim_l + sim_v) > total_casa:
         overs += 1
 
-prob_cover_global = covers / num_sims * 100
-prob_over_global = overs / num_sims * 100
+prob_cover_global = covers / num_sims_global * 100
+prob_over_global = overs / num_sims_global * 100
 
 st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (GLOBAL): **{prob_cover_global:.1f}%**")
 st.write(f"Prob. de OVER (GLOBAL): **{prob_over_global:.1f}%**")
 
 # =========================================================
-# 6b) SIMULACIÓN MONTE CARLO (CASA / VISITA)
+# 6b. MONTE CARLO CASA/VISITA
 # =========================================================
 st.subheader("6b) Simulación Monte Carlo 🟩 (CASA / VISITA)")
 prob_cover_cv = None
 prob_over_cv = None
-
 if hay_cv:
-    num_sims_cv = st.slider("Número de simulaciones (CASA/VISITA)", 1000, 50000, 10000, 1000, key="cv_sims")
+    num_sims_cv = st.slider("Número de simulaciones (CASA/VISITA)", 1000, 50000, 10000, 1000, key="sims_cv")
     desv_cv = max(5, total_cv * 0.15)
     covers_cv = 0
     overs_cv = 0
@@ -443,78 +373,52 @@ if hay_cv:
             overs_cv += 1
     prob_cover_cv = covers_cv / num_sims_cv * 100
     prob_over_cv = overs_cv / num_sims_cv * 100
-    st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (CASA/VISITA): **{prob_cover_cv:.1f}%**")
-    st.write(f"Prob. de OVER (CASA/VISITA): **{prob_over_cv:.1f}%**")
+
+    st.write(f"Prob. de que **{local or 'LOCAL'}** cubra (c/v): **{prob_cover_cv:.1f}%**")
+    st.write(f"Prob. de OVER (c/v): **{prob_over_cv:.1f}%**")
 else:
     st.info("Para correr esta simulación llena los campos de casa/visita.")
 
 # =========================================================
-# 7) APUESTAS RECOMENDADAS (si ≥ 55%)
+# 7. APUESTAS RECOMENDADAS
 # =========================================================
 st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
 recs = []
 
-# spread global
-prob_visita_spread_global = 100 - prob_cover_global
 if prob_cover_global >= 55:
     recs.append((f"Spread GLOBAL: {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover_global))
-elif prob_visita_spread_global >= 55:
-    recs.append((f"Spread GLOBAL: {visita or 'VISITA'} {-spread_casa:+.1f}", prob_visita_spread_global))
 
-# total global
-prob_under_global = 100 - prob_over_global
 if prob_over_global >= 55:
     recs.append((f"Total GLOBAL: OVER {total_casa:.1f}", prob_over_global))
-elif prob_under_global >= 55:
-    recs.append((f"Total GLOBAL: UNDER {total_casa:.1f}", prob_under_global))
 
-# casa/visita si hay
-if hay_cv and prob_cover_cv is not None:
-    p_visit_cv = 100 - prob_cover_cv
-    if prob_cover_cv >= 55:
-        recs.append((f"Spread C/V: {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover_cv))
-    elif p_visit_cv >= 55:
-        recs.append((f"Spread C/V: {visita or 'VISITA'} {-spread_casa:+.1f}", p_visit_cv))
+if hay_cv and prob_cover_cv is not None and prob_cover_cv >= 55:
+    recs.append((f"Spread CASA/VISITA: {local or 'LOCAL'} {spread_casa:+.1f}", prob_cover_cv))
 
-if hay_cv and prob_over_cv is not None:
-    p_under_cv = 100 - prob_over_cv
-    if prob_over_cv >= 55:
-        recs.append((f"Total C/V: OVER {total_casa:.1f}", prob_over_cv))
-    elif p_under_cv >= 55:
-        recs.append((f"Total C/V: UNDER {total_casa:.1f}", p_under_cv))
+if hay_cv and prob_over_cv is not None and prob_over_cv >= 55:
+    recs.append((f"Total CASA/VISITA: OVER {total_casa:.1f}", prob_over_cv))
 
 if recs:
     for txt, p in sorted(recs, key=lambda x: x[1], reverse=True):
         st.success(f"✅ {txt} — **{p:.1f}%**")
 else:
-    st.info("Ninguna apuesta pasó el 55% en la simulación.")
+    st.info("Ninguna apuesta pasa el 55% según la simulación.")
 
 # =========================================================
-# 8) EDGE DEL MODELO VS CASA (spread)
+# 8. EDGE DEL MODELO vs CASA (con ML)
 # =========================================================
 st.subheader("8) Edge del modelo vs casa")
+if ml_local != 0 and ml_visita != 0:
+    edge_local = prob_modelo_local - imp_local
+    edge_visita = prob_modelo_visita - imp_visita
 
-# edge spread local = prob_modelo_local - prob_implicita_local
-edge_local = None
-edge_visita = None
-
-if prob_imp_local is not None:
-    edge_local = prob_modelo_local - (prob_imp_local * 100)
-if prob_imp_visita is not None:
-    edge_visita = prob_modelo_visita - (prob_imp_visita * 100)
-
-if edge_local is not None:
-    if edge_local >= 5:
-        st.success(f"Edge LOCAL: +{edge_local:.1f}% (el modelo ve más valor que la casa)")
-    elif edge_local <= -5:
-        st.error(f"Edge LOCAL: {edge_local:.1f}% (la casa lo trae más alto; cuidado)")
+    if edge_local >= 0:
+        st.success(f"Edge LOCAL: **{edge_local:+.1f}%** (modelo ve más valor que la casa)")
     else:
-        st.write(f"Edge LOCAL: {edge_local:.1f}%")
+        st.error(f"Edge LOCAL: **{edge_local:+.1f}%** (la casa está más alta)")
 
-if edge_visita is not None:
-    if edge_visita >= 5:
-        st.success(f"Edge VISITA: +{edge_visita:.1f}% (el modelo ve más valor que la casa)")
-    elif edge_visita <= -5:
-        st.error(f"Edge VISITA: {edge_visita:.1f}% (la casa lo trae más alto; cuidado)")
+    if edge_visita >= 0:
+        st.success(f"Edge VISITA: **{edge_visita:+.1f}%**")
     else:
-        st.write(f"Edge VISITA: {edge_visita:.1f}%")
+        st.error(f"Edge VISITA: **{edge_visita:+.1f}%**")
+else:
+    st.caption("Pon los moneylines para calcular el edge.")
