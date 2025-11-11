@@ -1,4 +1,1 @@
-streamlit
-numpy
-pandas
-1xm1==4.9.3
+
