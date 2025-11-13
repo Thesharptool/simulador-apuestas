@@ -144,14 +144,14 @@ else:
     st.caption("Llena estos datos para que el total de NBA se acerque más a las líneas reales.")
     colL, colR = st.columns(2)
     with colL:
-        pace_local = st.number_input("Pace LOCAL (posesiones)", value=99.0, step=0.5)
-        off_local_100 = st.number_input("Ofensiva LOCAL (pts/100 poss)", value=112.0, step=0.5)
-        def_local_100 = st.number_input("Defensiva LOCAL (pts permitidos/100 poss)", value=113.0, step=0.5)
+        pace_local = st.number_input("Pace LOCAL (posesiones)", value=0.0, step=0.5)
+        off_local_100 = st.number_input("Ofensiva LOCAL (pts/100 poss)", value=0.0, step=0.5)
+        def_local_100 = st.number_input("Defensiva LOCAL (pts permitidos/100 poss)", value=0.0, step=0.5)
     with colR:
-        pace_visita = st.number_input("Pace VISITA (posesiones)", value=99.0, step=0.5)
-        off_visita_100 = st.number_input("Ofensiva VISITA (pts/100 poss)", value=112.0, step=0.5)
-        def_visita_100 = st.number_input("Defensiva VISITA (pts permitidos/100 poss)", value=113.0, step=0.5)
-    pace_liga = st.number_input("Pace promedio liga", value=99.0, step=0.5)
+        pace_visita = st.number_input("Pace VISITA (posesiones)", value=0.0, step=0.5)
+        off_visita_100 = st.number_input("Ofensiva VISITA (pts/100 poss)", value=0.0, step=0.5)
+        def_visita_100 = st.number_input("Defensiva VISITA (pts permitidos/100 poss)", value=0.0, step=0.5)
+    pace_liga = st.number_input("Pace promedio liga", value=0.0, step=0.5)
     hay_cv = False  # para que no dispare la de casa/visita luego
 
 # =========================================================
@@ -413,7 +413,6 @@ if prob_over >= 55:
     recs.append(f"🟢 Total GLOBAL: {'OVER' if total_modelo > total_casa else 'UNDER'} {total_casa:.1f} → **{prob_over:.1f}%**")
 
 if liga == "NFL" and hay_cv:
-    # en este caso sí tenemos prob_cover_cv y prob_over_cv
     if 'prob_cover_cv' in locals() and prob_cover_cv >= 55:
         recs.append(f"🟢 Spread C/V: {local or 'LOCAL'} {spread_casa:+.1f} → **{prob_cover_cv:.1f}%**")
     if 'prob_over_cv' in locals() and prob_over_cv >= 55:
