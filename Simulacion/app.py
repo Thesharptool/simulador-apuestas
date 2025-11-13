@@ -1,7 +1,6 @@
 import streamlit as st
 import random
 import requests
-import math
 
 # =========================================================
 # CONFIG GENERAL
@@ -134,27 +133,53 @@ if liga == "NFL":
     st.subheader("2) Promedios por condición (opcional)")
     c1, c2 = st.columns(2)
     with c1:
-        l_anota_casa = st.number_input("Local: puntos que ANOTA en casa", value=0.0, step=0.1)
-        l_permite_casa = st.number_input("Local: puntos que PERMITE en casa", value=0.0, step=0.1)
+        l_anota_casa = st.number_input(
+            "Local: puntos que ANOTA en casa", value=0.0, step=0.1
+        )
+        l_permite_casa = st.number_input(
+            "Local: puntos que PERMITE en casa", value=0.0, step=0.1
+        )
     with c2:
-        v_anota_visita = st.number_input("Visita: puntos que ANOTA de visita", value=0.0, step=0.1)
-        v_permite_visita = st.number_input("Visita: puntos que PERMITE de visita", value=0.0, step=0.1)
+        v_anota_visita = st.number_input(
+            "Visita: puntos que ANOTA de visita", value=0.0, step=0.1
+        )
+        v_permite_visita = st.number_input(
+            "Visita: puntos que PERMITE de visita", value=0.0, step=0.1
+        )
 
     hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 
 else:  # NBA
     st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
-    st.caption("Llena estos datos para que el total de NBA se acerque más a las líneas reales.")
+    st.caption(
+        "Llena estos datos para que el total de NBA se acerque más a las líneas reales."
+    )
     nb1, nb2 = st.columns(2)
 
     with nb1:
-        pace_local_5 = st.number_input("PACE LOCAL (posesiones últimos 5)", value=0.0, step=0.1)
-        off_local_5 = st.number_input("Ofensiva LOCAL (pts/100 poss últimos 5)", value=0.0, step=0.1)
-        def_local_5 = st.number_input("Defensiva LOCAL (pts permitidos/100 poss últimos 5)", value=0.0, step=0.1)
+        pace_local_5 = st.number_input(
+            "PACE LOCAL (posesiones últimos 5)", value=0.0, step=0.1
+        )
+        off_local_5 = st.number_input(
+            "Ofensiva LOCAL (pts/100 poss últimos 5)", value=0.0, step=0.1
+        )
+        def_local_5 = st.number_input(
+            "Defensiva LOCAL (pts permitidos/100 poss últimos 5)",
+            value=0.0,
+            step=0.1,
+        )
     with nb2:
-        pace_visita_5 = st.number_input("PACE VISITA (posesiones últimos 5)", value=0.0, step=0.1)
-        off_visita_5 = st.number_input("Ofensiva VISITA (pts/100 poss últimos 5)", value=0.0, step=0.1)
-        def_visita_5 = st.number_input("Defensiva VISITA (pts permitidos/100 poss últimos 5)", value=0.0, step=0.1)
+        pace_visita_5 = st.number_input(
+            "PACE VISITA (posesiones últimos 5)", value=0.0, step=0.1
+        )
+        off_visita_5 = st.number_input(
+            "Ofensiva VISITA (pts/100 poss últimos 5)", value=0.0, step=0.1
+        )
+        def_visita_5 = st.number_input(
+            "Defensiva VISITA (pts permitidos/100 poss últimos 5)",
+            value=0.0,
+            step=0.1,
+        )
 
     pace_liga = st.number_input("Pace promedio liga (NBA)", value=99.0, step=0.1)
 
@@ -208,21 +233,29 @@ st.subheader("4) Proyección del modelo")
 if liga == "NFL":
     # GLOBAL
     pts_local_global = proyeccion_nfl(l_anota_global, v_permite_global, True) * mult_local
-    pts_visita_global = proyeccion_nfl(v_anota_global, l_permite_global, False) * mult_visita
+    pts_visita_global = (
+        proyeccion_nfl(v_anota_global, l_permite_global, False) * mult_visita
+    )
     total_global = pts_local_global + pts_visita_global
-    spread_global = pts_local_global - pts_visita_global
+    spread_global = pts_local_global - pts_visita_global  # margen local – visita
+    line_modelo = -spread_global  # formato casa (LOCAL favorito = negativo)
 
     st.markdown("🟦 **GLOBAL**")
     st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
     st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.1f} pts**")
     st.write(f"- Total modelo: **{total_global:.1f}**")
-    st.write(f"- Spread modelo (local – visita): **{spread_global:+.1f}**")
+    st.write(
+        f"- Spread modelo (local – visita): **{spread_global:+.1f} pts** "
+        f"→ línea modelo LOCAL **{line_modelo:+.1f}**"
+    )
 
     # CASA / VISITA si hay
     if hay_cv:
         st.markdown("🟩 **CASA / VISITA**")
         pts_local_cv = proyeccion_nfl(l_anota_casa, v_permite_visita, True) * mult_local
-        pts_visita_cv = proyeccion_nfl(v_anota_visita, l_permite_casa, False) * mult_visita
+        pts_visita_cv = (
+            proyeccion_nfl(v_anota_visita, l_permite_casa, False) * mult_visita
+        )
         total_cv = pts_local_cv + pts_visita_cv
         spread_cv = pts_local_cv - pts_visita_cv
 
@@ -246,8 +279,7 @@ else:
     reciente_local = (0.6 * off_local_5 + 0.4 * def_visita_5) * (pace_med / 100.0)
     reciente_visita = (0.6 * off_visita_5 + 0.4 * def_local_5) * (pace_med / 100.0)
 
-    # global (lo de arriba) lo convertimos en algo tipo “promedio vs rival”
-    # si no pusieron nada global, lo dejamos 0 para que pese lo reciente
+    # global: promedio simple vs rival
     global_local_part = 0.0
     global_visita_part = 0.0
     if l_anota_global or v_permite_global:
@@ -260,15 +292,18 @@ else:
     pts_visita_global = (0.65 * reciente_visita + 0.35 * global_visita_part) * mult_visita
 
     total_global = pts_local_global + pts_visita_global
-    spread_global = pts_local_global - pts_visita_global
+    spread_global = pts_local_global - pts_visita_global  # margen local – visita
+    line_modelo = -spread_global  # formato casa
 
     st.markdown("🏀 usando últimos 5 + pace + global (65% / 35%)")
     st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
     st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.1f} pts**")
     st.write(f"- Total modelo: **{total_global:.1f}**")
-    st.write(f"- Spread modelo (local – visita): **{spread_global:+.1f}**")
+    st.write(
+        f"- Spread modelo (local – visita): **{spread_global:+.1f} pts** "
+        f"→ línea modelo LOCAL **{line_modelo:+.1f}**"
+    )
 
-    # para dejar compatibilidad con abajo
     total_cv = None
     spread_cv = None
 
@@ -288,9 +323,10 @@ with col_total:
     total_casa = st.number_input("Total (O/U) del casino", value=0.0, step=0.5)
 
 with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
-    st.write(f"- Modelo (formato casa): **LOCAL {spread_global:+.1f}**")
+    st.write(f"- Modelo (formato casa): **LOCAL {line_modelo:+.1f}**")
     st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
-    dif_spread = spread_global - spread_casa
+    # Usamos CASA - MODELO para que, si la casa es más agresiva con el favorito, el signo sea negativo
+    dif_spread = spread_casa - line_modelo
     st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread:+.1f} pts**")
 
 with st.expander("🔍 Comparación de totales (GLOBAL)", expanded=True):
@@ -361,23 +397,15 @@ st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
 
 covers, overs = 0, 0
-
-# 📌 Usamos σ del margen histórico:
-# NFL: σ_margen ≈ 13 pts
-# NBA: σ_margen ≈ 12 pts
-# Como simulamos LOCAL y VISITA por separado, convertimos a σ_equipo = σ_margen / √2
-if liga == "NFL":
-    sigma_margin = 13.0
-else:
-    sigma_margin = 12.0
-
-sigma_team = sigma_margin / math.sqrt(2)  # ≈ 9.2 NFL, 8.5 NBA
-desv_local = sigma_team
-desv_visita = sigma_team
+# desviación fija por deporte (curva normal más realista)
+if liga == "NBA":
+    desv = 12.0
+else:  # NFL
+    desv = 13.0
 
 for _ in range(num_sims):
-    sim_l = max(0, random.gauss(pts_local_global, desv_local))
-    sim_v = max(0, random.gauss(pts_visita_global, desv_visita))
+    sim_l = max(0, random.gauss(pts_local_global, desv))
+    sim_v = max(0, random.gauss(pts_visita_global, desv))
     # spread: LOCAL + spread_casa debe ser >= visita
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
@@ -389,10 +417,6 @@ prob_over = overs / num_sims * 100
 
 st.write(f"Prob. de que {local_name or 'LOCAL'} cubra (GLOBAL): **{prob_cover:.1f}%**")
 st.write(f"Prob. de OVER (GLOBAL): **{prob_over:.1f}%**")
-st.caption(
-    f"Simulación usando σ_margen ≈ {13 if liga=='NFL' else 12} pts "
-    f"→ σ_equipo ≈ {sigma_team:.1f} pts."
-)
 
 # =========================================================
 # 7) Apuestas recomendadas (si ≥ 55%)
@@ -400,9 +424,13 @@ st.caption(
 st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
 recs = []
 if prob_cover >= 55:
-    recs.append(f"🟢 Spread GLOBAL: {local_name or 'LOCAL'} {spread_casa:+.1f} → {prob_cover:.1f}%")
+    recs.append(
+        f"🟢 Spread GLOBAL: {local_name or 'LOCAL'} {spread_casa:+.1f} → {prob_cover:.1f}%"
+    )
 if prob_over >= 55:
-    recs.append(f"🟢 Total GLOBAL: OVER {total_casa:.1f} → {prob_over:.1f}%")
+    recs.append(
+        f"🟢 Total GLOBAL: OVER {total_casa:.1f} → {prob_over:.1f}%"
+    )
 
 if recs:
     for r in recs:
@@ -414,18 +442,36 @@ else:
 # 8) Edge del modelo vs casa
 # =========================================================
 st.subheader("8) Edge del modelo vs casa")
-# spread: si modelo dice LOCAL -3 y casa dice LOCAL -5 → modelo +2 pts a favor del local
-edge_local = -(spread_casa) + spread_global  # lo que gana LOCAL
+
+st.write(f"Línea MODELO (LOCAL): **{line_modelo:+.1f}**")
+st.write(f"Línea CASA   (LOCAL): **{spread_casa:+.1f}**")
+
+# Edge en puntos:
+# edge_local > 0  → la línea de la casa es más suave con el favorito → valor en LOCAL
+# edge_local < 0  → la casa es más agresiva con el favorito → valor en VISITA
+edge_local = spread_casa - line_modelo
 edge_visita = -edge_local
 
-if edge_local >= 0:
-    st.success(f"Edge LOCAL: +{edge_local:.1f} pts (la casa está más alta que tu modelo)")
+if edge_local > 0:
+    st.success(
+        f"Edge SPREAD LOCAL: **+{edge_local:.1f} pts** "
+        f"(la línea de la casa es {edge_local:.1f} pts más suave que tu modelo → valor en el LOCAL)"
+    )
 else:
-    st.error(f"Edge LOCAL: {edge_local:.1f} pts (tu modelo está más alto que la casa)")
+    st.error(
+        f"Edge SPREAD LOCAL: **{edge_local:.1f} pts** "
+        f"(la casa es más agresiva con el LOCAL → más valor en la VISITA)"
+    )
 
-if edge_visita >= 0:
-    st.success(f"Edge VISITA: +{edge_visita:.1f} pts")
+if edge_visita > 0:
+    st.success(
+        f"Edge SPREAD VISITA: **+{edge_visita:.1f} pts** "
+        f"(tu modelo ve {edge_visita:.1f} pts de valor en la VISITA)"
+    )
 else:
-    st.error(f"Edge VISITA: {edge_visita:.1f} pts")
+    st.error(
+        f"Edge SPREAD VISITA: **{edge_visita:.1f} pts** "
+        f"(hay poco o ningún valor en la VISITA según tu modelo)"
+    )
 
 st.caption("Pon los moneylines para calcular el edge de forma más fina.")
