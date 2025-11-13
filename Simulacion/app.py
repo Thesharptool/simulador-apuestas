@@ -1,6 +1,7 @@
 import streamlit as st
 import random
 import requests
+import math
 
 # =========================================================
 # CONFIG GENERAL
@@ -12,7 +13,7 @@ st.markdown("🧠 Modelo ponderado activo (multi-liga)")
 st.markdown(
     "🟦 = cálculo con promedios GLOBAL  \n"
     "🟩 = cálculo con promedios CASA/VISITA (solo NFL)  \n"
-    "Si llenas casa/visita te muestra las dos proyecciones."
+    "Si llenas casa/visita te muestra las dosproyecciones."
 )
 
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
@@ -360,15 +361,23 @@ st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
 
 covers, overs = 0, 0
-# desviación distinta para NFL/NBA
-if liga == "NBA":
-    desv = max(6, total_global * 0.12)
+
+# 📌 Usamos σ del margen histórico:
+# NFL: σ_margen ≈ 13 pts
+# NBA: σ_margen ≈ 12 pts
+# Como simulamos LOCAL y VISITA por separado, convertimos a σ_equipo = σ_margen / √2
+if liga == "NFL":
+    sigma_margin = 13.0
 else:
-    desv = max(5, total_global * 0.15)
+    sigma_margin = 12.0
+
+sigma_team = sigma_margin / math.sqrt(2)  # ≈ 9.2 NFL, 8.5 NBA
+desv_local = sigma_team
+desv_visita = sigma_team
 
 for _ in range(num_sims):
-    sim_l = max(0, random.gauss(pts_local_global, desv))
-    sim_v = max(0, random.gauss(pts_visita_global, desv))
+    sim_l = max(0, random.gauss(pts_local_global, desv_local))
+    sim_v = max(0, random.gauss(pts_visita_global, desv_visita))
     # spread: LOCAL + spread_casa debe ser >= visita
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
@@ -380,6 +389,10 @@ prob_over = overs / num_sims * 100
 
 st.write(f"Prob. de que {local_name or 'LOCAL'} cubra (GLOBAL): **{prob_cover:.1f}%**")
 st.write(f"Prob. de OVER (GLOBAL): **{prob_over:.1f}%**")
+st.caption(
+    f"Simulación usando σ_margen ≈ {13 if liga=='NFL' else 12} pts "
+    f"→ σ_equipo ≈ {sigma_team:.1f} pts."
+)
 
 # =========================================================
 # 7) Apuestas recomendadas (si ≥ 55%)
