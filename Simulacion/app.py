@@ -1,4 +1,292 @@
+import streamlit as st
+import random
+import requests
 
+# =========================================================
+# CONFIG GENERAL
+# =========================================================
+st.set_page_config(page_title="Simulador de Apuestas 🏈🏀", layout="wide")
+
+st.title("Simulador de Apuestas 🏈🏀")
+st.markdown("🧠 Modelo ponderado activo (multi-liga)")
+st.markdown(
+    "🟦 = cálculo con promedios GLOBAL  \n"
+    "🟩 = cálculo con promedios CASA/VISITA (solo NFL)  \n"
+    "Si llenas casa/visita te muestra las dos proyecciones."
+)
+
+liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
+
+# =========================================================
+# NFL: carga desde SportsDataIO
+# =========================================================
+SPORTSDATAIO_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"  # tu llave
+NFL_SEASON = "2025REG"
+
+
+@st.cache_data(ttl=600)
+def cargar_nfl_desde_api(api_key: str, season: str):
+    url = f"https://api.sportsdata.io/v3/nfl/scores/json/Standings/{season}"
+    headers = {"Ocp-Apim-Subscription-Key": api_key}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO"
+        data = resp.json()
+    except Exception as e:
+        return {}, f"Error de conexión: {e}"
+
+    nfl_teams = {}
+    for t in data:
+        name = (t.get("Name") or "").lower()
+        wins = t.get("Wins", 0) or 0
+        losses = t.get("Losses", 0) or 0
+        ties = t.get("Ties", 0) or 0
+        pf = t.get("PointsFor", 0.0) or 0.0
+        pa = t.get("PointsAgainst", 0.0) or 0.0
+
+        played = wins + losses + ties
+        games_raw = t.get("Games", 0) or 0
+        games_played = played if played > 0 else games_raw if games_raw > 0 else 1
+
+        nfl_teams[name] = {
+            "pf_pg": round(pf / games_played, 2),
+            "pa_pg": round(pa / games_played, 2),
+        }
+    return nfl_teams, ""
+
+
+nfl_data = {}
+if liga == "NFL":
+    nfl_data, nfl_error = cargar_nfl_desde_api(SPORTSDATAIO_KEY, NFL_SEASON)
+    if nfl_error:
+        st.warning(f"⚠️ {nfl_error}")
+    else:
+        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
+else:
+    st.info("📘 NBA: no hay carga automática, llena los campos manualmente.")
+
+# =========================================================
+# 1) DATOS DEL PARTIDO
+# =========================================================
+st.subheader("1) Datos del partido")
+col_l, col_v = st.columns(2)
+
+# ---- LOCAL ----
+with col_l:
+    local_name = st.text_input("Equipo LOCAL", key="local_name")
+    if liga == "NFL":
+        if st.button("Rellenar LOCAL desde NFL"):
+            lookup = local_name.strip().lower()
+            if lookup in nfl_data:
+                st.session_state["l_anota_global"] = nfl_data[lookup]["pf_pg"]
+                st.session_state["l_permite_global"] = nfl_data[lookup]["pa_pg"]
+                st.success(f"LOCAL rellenado con datos reales de {local_name}")
+            else:
+                st.error("No encontré ese equipo en NFL")
+
+    st.markdown("**Promedios GLOBAL del LOCAL**")
+    l_anota_global = st.number_input(
+        "Local: puntos que ANOTA (global)",
+        value=st.session_state.get("l_anota_global", 0.0),
+        step=0.1,
+        key="l_anota_global",
+    )
+    l_permite_global = st.number_input(
+        "Local: puntos que PERMITE (global)",
+        value=st.session_state.get("l_permite_global", 0.0),
+        step=0.1,
+        key="l_permite_global",
+    )
+
+# ---- VISITA ----
+with col_v:
+    visita_name = st.text_input("Equipo VISITA", key="visita_name")
+    if liga == "NFL":
+        if st.button("Rellenar VISITA desde NFL"):
+            lookup = visita_name.strip().lower()
+            if lookup in nfl_data:
+                st.session_state["v_anota_global"] = nfl_data[lookup]["pf_pg"]
+                st.session_state["v_permite_global"] = nfl_data[lookup]["pa_pg"]
+                st.success(f"VISITA rellenado con datos reales de {visita_name}")
+            else:
+                st.error("No encontré ese equipo en NFL")
+
+    st.markdown("**Promedios GLOBAL del VISITA**")
+    v_anota_global = st.number_input(
+        "Visita: puntos que ANOTA (global)",
+        value=st.session_state.get("v_anota_global", 0.0),
+        step=0.1,
+        key="v_anota_global",
+    )
+    v_permite_global = st.number_input(
+        "Visita: puntos que PERMITE (global)",
+        value=st.session_state.get("v_permite_global", 0.0),
+        step=0.1,
+        key="v_permite_global",
+    )
+
+# =========================================================
+# 2) SEGÚN LIGA
+# =========================================================
+if liga == "NFL":
+    st.subheader("2) Promedios por condición (opcional)")
+    c1, c2 = st.columns(2)
+    with c1:
+        l_anota_casa = st.number_input("Local: puntos que ANOTA en casa", value=0.0, step=0.1)
+        l_permite_casa = st.number_input("Local: puntos que PERMITE en casa", value=0.0, step=0.1)
+    with c2:
+        v_anota_visita = st.number_input("Visita: puntos que ANOTA de visita", value=0.0, step=0.1)
+        v_permite_visita = st.number_input("Visita: puntos que PERMITE de visita", value=0.0, step=0.1)
+
+    hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
+
+else:  # NBA
+    st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
+    st.caption("Llena estos datos para que el total de NBA se acerque más a las líneas reales.")
+    nb1, nb2 = st.columns(2)
+
+    with nb1:
+        pace_local_5 = st.number_input("PACE LOCAL (posesiones últimos 5)", value=0.0, step=0.1)
+        off_local_5 = st.number_input("Ofensiva LOCAL (pts/100 poss últimos 5)", value=0.0, step=0.1)
+        def_local_5 = st.number_input("Defensiva LOCAL (pts permitidos/100 poss últimos 5)", value=0.0, step=0.1)
+    with nb2:
+        pace_visita_5 = st.number_input("PACE VISITA (posesiones últimos 5)", value=0.0, step=0.1)
+        off_visita_5 = st.number_input("Ofensiva VISITA (pts/100 poss últimos 5)", value=0.0, step=0.1)
+        def_visita_5 = st.number_input("Defensiva VISITA (pts permitidos/100 poss últimos 5)", value=0.0, step=0.1)
+
+    pace_liga = st.number_input("Pace promedio liga (NBA)", value=99.0, step=0.1)
+
+# =========================================================
+# 3) AJUSTE POR LESIONES / FORMA
+# =========================================================
+st.subheader("3) Ajuste por lesiones / forma")
+
+opt_estado = {
+    "Healthy / completo": 1.00,
+    "1 baja importante": 0.97,
+    "Varias bajas / tocado": 0.93,
+    "En buen momento": 1.03,
+}
+
+c3, c4 = st.columns(2)
+with c3:
+    estado_local = st.selectbox(
+        f"Estado ofensivo LOCAL ({liga})",
+        list(opt_estado.keys()),
+        index=0,
+        key="estado_local",
+    )
+with c4:
+    estado_visita = st.selectbox(
+        f"Estado ofensivo VISITA ({liga})",
+        list(opt_estado.keys()),
+        index=0,
+        key="estado_visita",
+    )
+
+mult_local = opt_estado[estado_local]
+mult_visita = opt_estado[estado_visita]
+st.caption("Estos multiplicadores afectan a los puntos proyectados. 1.00 = normal.")
+
+# =========================================================
+# FUNCIÓN DE PROYECCIÓN NFL
+# =========================================================
+def proyeccion_nfl(ofensiva, defensa, es_local=False):
+    base = 0.55 * ofensiva + 0.35 * defensa
+    if es_local:
+        base += 1.5
+    return base
+
+
+# =========================================================
+# 4) PROYECCIÓN DEL MODELO
+# =========================================================
+st.subheader("4) Proyección del modelo")
+
+if liga == "NFL":
+    # GLOBAL
+    pts_local_global = proyeccion_nfl(l_anota_global, v_permite_global, True) * mult_local
+    pts_visita_global = proyeccion_nfl(v_anota_global, l_permite_global, False) * mult_visita
+    total_global = pts_local_global + pts_visita_global
+    spread_global = pts_local_global - pts_visita_global
+
+    st.markdown("🟦 **GLOBAL**")
+    st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
+    st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.1f} pts**")
+    st.write(f"- Total modelo: **{total_global:.1f}**")
+    st.write(f"- Spread modelo (local – visita): **{spread_global:+.1f}**")
+
+    # CASA / VISITA si hay
+    if hay_cv:
+        st.markdown("🟩 **CASA / VISITA**")
+        pts_local_cv = proyeccion_nfl(l_anota_casa, v_permite_visita, True) * mult_local
+        pts_visita_cv = proyeccion_nfl(v_anota_visita, l_permite_casa, False) * mult_visita
+        total_cv = pts_local_cv + pts_visita_cv
+        spread_cv = pts_local_cv - pts_visita_cv
+
+        st.write(f"- {local_name or 'LOCAL'}: **{pts_local_cv:.1f} pts**")
+        st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_cv:.1f} pts**")
+        st.write(f"- Total modelo (c/v): **{total_cv:.1f}**")
+        st.write(f"- Spread modelo (c/v): **{spread_cv:+.1f}**")
+    else:
+        total_cv = None
+        spread_cv = None
+
+else:
+    # ================== NBA MODEL ==================
+    # pace medio de los 2, si no hay usa liga
+    if pace_local_5 > 0 and pace_visita_5 > 0:
+        pace_med = (pace_local_5 + pace_visita_5) / 2
+    else:
+        pace_med = pace_liga
+
+    # reciente LOCAL y VISITA -> 60% ataque + 40% defensa rival
+    reciente_local = (0.6 * off_local_5 + 0.4 * def_visita_5) * (pace_med / 100.0)
+    reciente_visita = (0.6 * off_visita_5 + 0.4 * def_local_5) * (pace_med / 100.0)
+
+    # global (lo de arriba) lo convertimos en algo tipo “promedio vs rival”
+    # si no pusieron nada global, lo dejamos 0 para que pese lo reciente
+    global_local_part = 0.0
+    global_visita_part = 0.0
+    if l_anota_global or v_permite_global:
+        global_local_part = (l_anota_global + v_permite_global) / 2.0
+    if v_anota_global or l_permite_global:
+        global_visita_part = (v_anota_global + l_permite_global) / 2.0
+
+    # mezcla 65% reciente, 35% global
+    pts_local_global = (0.65 * reciente_local + 0.35 * global_local_part) * mult_local
+    pts_visita_global = (0.65 * reciente_visita + 0.35 * global_visita_part) * mult_visita
+
+    total_global = pts_local_global + pts_visita_global
+    spread_global = pts_local_global - pts_visita_global
+
+    st.markdown("🏀 usando últimos 5 + pace + global (65% / 35%)")
+    st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
+    st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.1f} pts**")
+    st.write(f"- Total modelo: **{total_global:.1f}**")
+    st.write(f"- Spread modelo (local – visita): **{spread_global:+.1f}**")
+
+    # para dejar compatibilidad con abajo
+    total_cv = None
+    spread_cv = None
+
+# =========================================================
+# 5) LÍNEA DEL CASINO Y DIFERENCIAS
+# =========================================================
+st.subheader("5) Línea del casino y diferencias")
+
+col_spread, col_total = st.columns(2)
+with col_spread:
+    spread_casa = st.number_input(
+        "Spread del casino (negativo si LOCAL favorito)",
+        value=0.0,
+        step=0.5,
+    )
+with col_total:
+    total_casa = st.number_input("Total (O/U) del casino", value=0.0, step=0.5)
+
+with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
     st.write(f"- Modelo (formato casa): **LOCAL {spread_global:+.1f}**")
     st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
     dif_spread = spread_global - spread_casa
