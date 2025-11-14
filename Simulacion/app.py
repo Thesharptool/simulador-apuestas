@@ -15,7 +15,8 @@ st.markdown(
     "Si llenas casa/visita te muestra las dosproyecciones."
 )
 
-liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA"], horizontal=True)
+# 👉 AHORA: también NHL
+liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=True)
 
 # =========================================================
 # NFL: carga desde SportsDataIO
@@ -39,14 +40,14 @@ def cargar_nfl_desde_api(api_key: str, season: str):
     nfl_teams = {}
     for t in data:
         name = (t.get("Name") or "").lower()
-        wins = t.get("Wins", 0) or 0
-        losses = t.get("Losses", 0) or 0
-        ties = t.get("Ties", 0) or 0
-        pf = t.get("PointsFor", 0.0) or 0.0
-        pa = t.get("PointsAgainst", 0.0) or 0.0
+        wins = (t.get("Wins") or 0) or 0
+        losses = (t.get("Losses") or 0) or 0
+        ties = (t.get("Ties") or 0) or 0
+        pf = (t.get("PointsFor") or 0.0) or 0.0
+        pa = (t.get("PointsAgainst") or 0.0) or 0.0
 
         played = wins + losses + ties
-        games_raw = t.get("Games", 0) or 0
+        games_raw = (t.get("Games") or 0) or 0
         games_played = played if played > 0 else games_raw if games_raw > 0 else 1
 
         nfl_teams[name] = {
@@ -63,8 +64,10 @@ if liga == "NFL":
         st.warning(f"⚠️ {nfl_error}")
     else:
         st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
-else:
+elif liga == "NBA":
     st.info("📘 NBA: no hay carga automática, llena los campos manualmente.")
+else:  # NHL
+    st.info("🏒 NHL: no hay carga automática, llena los campos manualmente con tus stats.")
 
 # =========================================================
 # 1) DATOS DEL PARTIDO
@@ -149,7 +152,7 @@ if liga == "NFL":
 
     hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
 
-else:  # NBA
+elif liga == "NBA":
     st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
     st.caption(
         "Llena estos datos para que el total de NBA se acerque más a las líneas reales."
@@ -182,6 +185,31 @@ else:  # NBA
         )
 
     pace_liga = st.number_input("Pace promedio liga (NBA)", value=99.0, step=0.1)
+    hay_cv = False  # solo aplica a NFL
+
+else:  # NHL
+    st.subheader("2) Factores avanzados NHL (últimos 5 + xG + goalie) 🏒")
+    st.caption("Usa GF/GA, xG, Corsi% y Save% para acercarte a las líneas reales.")
+    nh1, nh2 = st.columns(2)
+
+    with nh1:
+        gf_local_5 = st.number_input("GF LOCAL (goles a favor últimos 5)", value=0.0, step=0.1)
+        ga_local_5 = st.number_input("GA LOCAL (goles en contra últimos 5)", value=0.0, step=0.1)
+        xgf_local_5 = st.number_input("xGF LOCAL (goles esperados a favor últimos 5)", value=0.0, step=0.1)
+        xga_local_5 = st.number_input("xGA LOCAL (goles esperados en contra últimos 5)", value=0.0, step=0.1)
+        corsi_local_5 = st.number_input("Corsi% LOCAL (últimos 5)", value=50.0, step=0.5)
+        sv_local_5 = st.number_input("Save% GOALIE LOCAL (últimos 5)", value=0.910, step=0.001, format="%.3f")
+
+    with nh2:
+        gf_visita_5 = st.number_input("GF VISITA (goles a favor últimos 5)", value=0.0, step=0.1)
+        ga_visita_5 = st.number_input("GA VISITA (goles en contra últimos 5)", value=0.0, step=0.1)
+        xgf_visita_5 = st.number_input("xGF VISITA (goles esperados a favor últimos 5)", value=0.0, step=0.1)
+        xga_visita_5 = st.number_input("xGA VISITA (goles esperados en contra últimos 5)", value=0.0, step=0.1)
+        corsi_visita_5 = st.number_input("Corsi% VISITA (últimos 5)", value=50.0, step=0.5)
+        sv_visita_5 = st.number_input("Save% GOALIE VISITA (últimos 5)", value=0.910, step=0.001, format="%.3f")
+
+    goles_liga = st.number_input("Promedio goles totales liga (NHL)", value=6.2, step=0.1)
+    hay_cv = False  # solo NFL
 
 # =========================================================
 # 3) AJUSTE POR LESIONES / FORMA
@@ -224,6 +252,15 @@ def proyeccion_nfl(ofensiva, defensa, es_local=False):
         base += 1.5
     return base
 
+# Helpers NHL
+def pick(val, fallback):
+    return val if val > 0 else fallback
+
+def ajustar_por_goalie(lam, sv_pct, base_sv=0.910):
+    if sv_pct <= 0:
+        return lam
+    factor = base_sv / sv_pct
+    return lam * factor
 
 # =========================================================
 # 4) PROYECCIÓN DEL MODELO
@@ -267,7 +304,7 @@ if liga == "NFL":
         total_cv = None
         spread_cv = None
 
-else:
+elif liga == "NBA":
     # ================== NBA MODEL ==================
     # pace medio de los 2, si no hay usa liga
     if pace_local_5 > 0 and pace_visita_5 > 0:
@@ -307,6 +344,58 @@ else:
     total_cv = None
     spread_cv = None
 
+else:
+    # ================== NHL MODEL ==================
+    # tomamos global como fallback si no hay últimos 5
+    gfL = pick(gf_local_5, l_anota_global)
+    gaL = pick(ga_local_5, l_permite_global)
+    gfV = pick(gf_visita_5, v_anota_global)
+    gaV = pick(ga_visita_5, v_permite_global)
+
+    xgfL = pick(xgf_local_5, gfL)
+    xgaL = pick(xga_local_5, gaL)
+    xgfV = pick(xgf_visita_5, gfV)
+    xgaV = pick(xga_visita_5, gaV)
+
+    # índices ataque/defensa recientes
+    atkL = 0.6 * xgfL + 0.4 * gfL
+    defL = 0.6 * xgaL + 0.4 * gaL
+    atkV = 0.6 * xgfV + 0.4 * gfV
+    defV = 0.6 * xgaV + 0.4 * gaV
+
+    # efecto Corsi% (ligero)
+    factor_cfL = 1 + (corsi_local_5 - 50.0) / 200.0
+    factor_cfV = 1 + (corsi_visita_5 - 50.0) / 200.0
+
+    # base de la liga (mitad de los goles totales)
+    base_lambda = goles_liga / 2.0
+
+    lam_local_raw = (0.5 * atkL + 0.3 * base_lambda + 0.2 * defV) * factor_cfL
+    lam_visita_raw = (0.5 * atkV + 0.3 * base_lambda + 0.2 * defL) * factor_cfV
+
+    # ajuste por portero rival
+    lam_local = ajustar_por_goalie(lam_local_raw, sv_visita_5)
+    lam_visita = ajustar_por_goalie(lam_visita_raw, sv_local_5)
+
+    pts_local_global = lam_local * mult_local
+    pts_visita_global = lam_visita * mult_visita
+
+    total_global = pts_local_global + pts_visita_global
+    spread_global = pts_local_global - pts_visita_global
+    line_modelo = -spread_global  # formato casa
+
+    st.markdown("🏒 usando GF/GA + xG + Corsi% + Save% (NHL)")
+    st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.2f} goles**")
+    st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.2f} goles**")
+    st.write(f"- Total modelo: **{total_global:.2f} goles**")
+    st.write(
+        f"- Spread modelo (local – visita): **{spread_global:+.2f} goles** "
+        f"→ línea modelo LOCAL **{line_modelo:+.2f}**"
+    )
+
+    total_cv = None
+    spread_cv = None
+
 # =========================================================
 # 5) LÍNEA DEL CASINO Y DIFERENCIAS
 # =========================================================
@@ -325,7 +414,7 @@ with col_total:
 with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
     st.write(f"- Modelo (formato casa): **LOCAL {line_modelo:+.1f}**")
     st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
-    # Usamos CASA - MODELO para que, si la casa es más agresiva con el favorito, el signo sea negativo
+    # Casa - Modelo para que signo indique quién es más agresivo con el favorito
     dif_spread = spread_casa - line_modelo
     st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread:+.1f} pts**")
 
@@ -400,8 +489,10 @@ covers, overs = 0, 0
 # desviación fija por deporte (curva normal más realista)
 if liga == "NBA":
     desv = 12.0
-else:  # NFL
+elif liga == "NFL":
     desv = 13.0
+else:  # NHL, marcadores bajos
+    desv = 1.5
 
 for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local_global, desv))
