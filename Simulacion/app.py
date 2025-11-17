@@ -22,6 +22,7 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # =========================================================
 SPORTSDATAIO_KEY = "9a0c57c7cd90446f9b836247b5cf5c34"  # tu llave
 NFL_SEASON = "2025REG"
+NFL_STATS_SEASON = "2025REG"
 
 
 @st.cache_data(ttl=600)
@@ -31,7 +32,7 @@ def cargar_nfl_desde_api(api_key: str, season: str):
     try:
         resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (Standings)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión: {e}"
@@ -56,13 +57,72 @@ def cargar_nfl_desde_api(api_key: str, season: str):
     return nfl_teams, ""
 
 
+@st.cache_data(ttl=600)
+def cargar_nfl_stats_desde_api(api_key: str, season: str):
+    """
+    Carga stats avanzadas de NFL desde SportsDataIO (TeamSeasonStats).
+    Ajusta los nombres de campo según la doc si alguno no coincide.
+    """
+    url = f"https://api.sportsdata.io/v3/nfl/stats/json/TeamSeasonStats/{season}"
+    headers = {"Ocp-Apim-Subscription-Key": api_key}
+    try:
+        resp = requests.get(url, headers=headers, timeout=10)
+        if resp.status_code != 200:
+            return {}, f"Error {resp.status_code} al conectar con TeamSeasonStats"
+        data = resp.json()
+    except Exception as e:
+        return {}, f"Error de conexión (stats avanzadas): {e}"
+
+    stats_dict = {}
+    for t in data:
+        name = (t.get("Name") or "").lower()
+
+        # Nombres típicos de SportsDataIO. Si alguno falla, imprime t.keys().
+        off_ypp = t.get("OffensiveYardsPerPlay", 0.0) or 0.0
+        def_ypp = t.get("DefensiveYardsAllowedPerPlay", 0.0) or 0.0
+
+        offensive_plays = t.get("OffensivePlays", 0) or 0
+        top_seconds = t.get("TimeOfPossessionSeconds", 0) or 0
+
+        if offensive_plays > 0 and top_seconds > 0:
+            sec_per_play = top_seconds / offensive_plays
+        else:
+            sec_per_play = 28.0  # promedio liga de backup
+
+        # Red zone ofensiva (ajusta campos según tu plan)
+        rz_trips = t.get("OffensiveRedZoneTrips", 0) or 0
+        rz_tds = t.get("OffensiveRedZoneScores", 0) or 0
+        if rz_trips > 0:
+            rz_td_pct = (rz_tds / rz_trips) * 100.0
+        else:
+            rz_td_pct = 55.0  # promedio liga
+
+        stats_dict[name] = {
+            "off_ypp": round(off_ypp, 3),
+            "def_ypp": round(def_ypp, 3),
+            "sec_per_play": round(sec_per_play, 2),
+            "rz_td_pct": round(rz_td_pct, 1),
+        }
+
+    return stats_dict, ""
+
+
+# Carga de datos según liga
 nfl_data = {}
+nfl_stats_avanzado = {}
 if liga == "NFL":
     nfl_data, nfl_error = cargar_nfl_desde_api(SPORTSDATAIO_KEY, NFL_SEASON)
     if nfl_error:
         st.warning(f"⚠️ {nfl_error}")
     else:
-        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
+        st.success(f"✅ Datos NFL básicos cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
+
+    nfl_stats_avanzado, nfl_stats_error = cargar_nfl_stats_desde_api(SPORTSDATAIO_KEY, NFL_STATS_SEASON)
+    if nfl_stats_error:
+        st.warning(f"⚠️ {nfl_stats_error}")
+    else:
+        st.info(f"📊 Stats avanzadas NFL cargadas — {len(nfl_stats_avanzado)} equipos ({NFL_STATS_SEASON})")
+
 elif liga == "NBA":
     st.info("📘 NBA: no hay carga automática, llena los campos manualmente.")
 else:
@@ -132,6 +192,7 @@ with col_v:
 # 2) SEGÚN LIGA
 # =========================================================
 if liga == "NFL":
+    # 2) promedios condición casa/visita
     st.subheader("2) Promedios por condición (opcional)")
     c1, c2 = st.columns(2)
     with c1:
@@ -150,6 +211,111 @@ if liga == "NFL":
         )
 
     hay_cv = any([l_anota_casa, l_permite_casa, v_anota_visita, v_permite_visita])
+
+    # 2b) factores avanzados NFL
+    st.subheader("2b) Factores avanzados NFL (últimos 5 / temporada) 🏈")
+
+    nf1, nf2 = st.columns(2)
+
+    with nf1:
+        st.markdown("### LOCAL")
+        if st.button("Autocompletar LOCAL (stats temporada)", key="autofill_local_adv"):
+            lookup = (local_name or "").strip().lower()
+            if lookup in nfl_stats_avanzado:
+                datos = nfl_stats_avanzado[lookup]
+                st.session_state["off_ypp_local_5"] = datos["off_ypp"]
+                st.session_state["def_ypp_local_5"] = datos["def_ypp"]
+                st.session_state["sec_play_local_5"] = datos["sec_per_play"]
+                st.session_state["rz_td_local"] = datos["rz_td_pct"]
+                st.success(f"LOCAL rellenado con stats avanzadas de {local_name}")
+            else:
+                st.error("No encontré stats avanzadas para ese equipo (LOCAL).")
+
+        off_ypp_local_5 = st.number_input(
+            "LOCAL: yardas por jugada ofensiva (últimos 5 / temporada)",
+            value=st.session_state.get("off_ypp_local_5", 0.0),
+            step=0.1,
+            key="off_ypp_local_5",
+        )
+        def_ypp_local_5 = st.number_input(
+            "LOCAL: yardas por jugada defensiva PERMITIDAS (últimos 5 / temporada)",
+            value=st.session_state.get("def_ypp_local_5", 0.0),
+            step=0.1,
+            key="def_ypp_local_5",
+        )
+        sec_play_local_5 = st.number_input(
+            "LOCAL: segundos por jugada ofensiva (últimos 5 / temporada)",
+            value=st.session_state.get("sec_play_local_5", 0.0),
+            step=0.1,
+            key="sec_play_local_5",
+        )
+        rz_td_local = st.number_input(
+            "LOCAL: % TD ofensivo en red zone",
+            value=st.session_state.get("rz_td_local", 55.0),
+            step=1.0,
+            key="rz_td_local",
+        )
+
+    with nf2:
+        st.markdown("### VISITA")
+        if st.button("Autocompletar VISITA (stats temporada)", key="autofill_visita_adv"):
+            lookup = (visita_name or "").strip().lower()
+            if lookup in nfl_stats_avanzado:
+                datos = nfl_stats_avanzado[lookup]
+                st.session_state["off_ypp_visita_5"] = datos["off_ypp"]
+                st.session_state["def_ypp_visita_5"] = datos["def_ypp"]
+                st.session_state["sec_play_visita_5"] = datos["sec_per_play"]
+                st.session_state["rz_td_visita"] = datos["rz_td_pct"]
+                st.success(f"VISITA rellenado con stats avanzadas de {visita_name}")
+            else:
+                st.error("No encontré stats avanzadas para ese equipo (VISITA).")
+
+        off_ypp_visita_5 = st.number_input(
+            "VISITA: yardas por jugada ofensiva (últimos 5 / temporada)",
+            value=st.session_state.get("off_ypp_visita_5", 0.0),
+            step=0.1,
+            key="off_ypp_visita_5",
+        )
+        def_ypp_visita_5 = st.number_input(
+            "VISITA: yardas por jugada defensiva PERMITIDAS (últimos 5 / temporada)",
+            value=st.session_state.get("def_ypp_visita_5", 0.0),
+            step=0.1,
+            key="def_ypp_visita_5",
+        )
+        sec_play_visita_5 = st.number_input(
+            "VISITA: segundos por jugada ofensiva (últimos 5 / temporada)",
+            value=st.session_state.get("sec_play_visita_5", 0.0),
+            step=0.1,
+            key="sec_play_visita_5",
+        )
+        rz_td_visita = st.number_input(
+            "VISITA: % TD ofensivo en red zone",
+            value=st.session_state.get("rz_td_visita", 55.0),
+            step=1.0,
+            key="rz_td_visita",
+        )
+
+    # promedios de referencia liga
+    ypp_liga = st.number_input(
+        "NFL: yardas por jugada ofensiva promedio liga",
+        value=5.5,
+        step=0.1,
+    )
+    sec_play_liga = st.number_input(
+        "NFL: segundos por jugada promedio liga",
+        value=28.0,
+        step=0.1,
+    )
+    rz_liga = st.number_input(
+        "NFL: % TD red zone ofensiva promedio liga",
+        value=55.0,
+        step=1.0,
+    )
+
+    hay_nfl_avanzado = any([
+        off_ypp_local_5, def_ypp_local_5, off_ypp_visita_5, def_ypp_visita_5,
+        sec_play_local_5, sec_play_visita_5, rz_td_local, rz_td_visita
+    ])
 
 elif liga == "NBA":
     st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
@@ -257,14 +423,54 @@ def proyeccion_nfl(ofensiva, defensa, es_local=False):
 st.subheader("4) Proyección del modelo")
 
 if liga == "NFL":
-    # GLOBAL
+    # 4.1 PROYECCIÓN GLOBAL BÁSICA
     pts_local_global = proyeccion_nfl(l_anota_global, v_permite_global, True) * mult_local
     pts_visita_global = proyeccion_nfl(v_anota_global, l_permite_global, False) * mult_visita
     total_global = pts_local_global + pts_visita_global
     spread_global = pts_local_global - pts_visita_global  # margen local – visita
     line_modelo = -spread_global  # formato casa (LOCAL favorito = negativo)
 
-    st.markdown("🟦 **GLOBAL**")
+    # 4.2 AJUSTES AVANZADOS NFL (nivel medio)
+    if "hay_nfl_avanzado" in locals() and hay_nfl_avanzado:
+        # 1) EFICIENCIA YPP (ofensa vs defensa rival)
+        def calc_ypp_factor(off_ypp, def_ypp_rival, ypp_liga_val):
+            if off_ypp <= 0 or def_ypp_rival <= 0 or ypp_liga_val <= 0:
+                return 1.0
+            off_factor = off_ypp / ypp_liga_val
+            def_factor = ypp_liga_val / def_ypp_rival
+            factor = 0.6 * off_factor + 0.4 * def_factor
+            return max(0.8, min(1.2, factor))  # cap ±20%
+
+        ypp_factor_local = calc_ypp_factor(off_ypp_local_5, def_ypp_visita_5, ypp_liga)
+        ypp_factor_visita = calc_ypp_factor(off_ypp_visita_5, def_ypp_local_5, ypp_liga)
+
+        pts_local_global *= ypp_factor_local
+        pts_visita_global *= ypp_factor_visita
+
+        # 2) RITMO: segundos por jugada
+        if sec_play_local_5 > 0 and sec_play_visita_5 > 0 and sec_play_liga > 0:
+            sec_med = (sec_play_local_5 + sec_play_visita_5) / 2
+            ritmo_factor = sec_play_liga / sec_med
+            ritmo_factor = max(0.9, min(1.1, ritmo_factor))  # ±10%
+            pts_local_global *= ritmo_factor
+            pts_visita_global *= ritmo_factor
+
+        # 3) RED ZONE TD% ofensivo
+        def rz_adjust(rz_team, rz_liga_val):
+            if rz_team <= 0 or rz_liga_val <= 0:
+                return 0.0
+            diff = (rz_team - rz_liga_val) / 10.0  # cada 10 pts % ~ 1 punto
+            return max(-1.0, min(1.0, diff))
+
+        pts_local_global += rz_adjust(rz_td_local, rz_liga)
+        pts_visita_global += rz_adjust(rz_td_visita, rz_liga)
+
+        total_global = pts_local_global + pts_visita_global
+        spread_global = pts_local_global - pts_visita_global
+        line_modelo = -spread_global
+
+    # 4.3 OUTPUT NFL
+    st.markdown("🟦 **GLOBAL (NFL con ajustes: YPP + ritmo + red zone)**")
     st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
     st.write(f"- {visita_name or 'VISITA'}: **{pts_visita_global:.1f} pts**")
     st.write(f"- Total modelo: **{total_global:.1f}**")
@@ -275,7 +481,7 @@ if liga == "NFL":
 
     # CASA / VISITA si hay
     if hay_cv:
-        st.markdown("🟩 **CASA / VISITA**")
+        st.markdown("🟩 **CASA / VISITA (datos manuales)**")
         pts_local_cv = proyeccion_nfl(l_anota_casa, v_permite_visita, True) * mult_local
         pts_visita_cv = proyeccion_nfl(v_anota_visita, l_permite_casa, False) * mult_visita
         total_cv = pts_local_cv + pts_visita_cv
@@ -291,7 +497,7 @@ if liga == "NFL":
 
 elif liga == "NBA":
     # pace medio de los 2, si no hay usa liga
-    if pace_local_5 > 0 and pace_visita_5 > 0:
+    if "pace_local_5" in locals() and pace_local_5 > 0 and pace_visita_5 > 0:
         pace_med = (pace_local_5 + pace_visita_5) / 2
     else:
         pace_med = pace_liga
@@ -379,7 +585,6 @@ with col_total:
 with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
     st.write(f"- Modelo (formato casa): **LOCAL {line_modelo:+.1f}**")
     st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
-    # CASA - MODELO, para leer fácil la dirección del edge
     dif_spread = spread_casa - line_modelo
     st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread:+.1f} pts**")
 
@@ -389,7 +594,6 @@ with st.expander("🔍 Comparación de totales (GLOBAL)", expanded=True):
     dif_total = total_global - total_casa
     st.write(f"- **DIF. TOTAL (GLOBAL): {dif_total:+.1f} pts**")
 
-# alerta de trap line
 trap_msgs = []
 if abs(dif_spread) >= 5:
     trap_msgs.append("spread")
@@ -434,7 +638,6 @@ st.write(
 # 5c) Comparativa de probabilidades (modelo vs casino)
 # =========================================================
 st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
-# modelo: muy sencillo, si spread modelo > 0 => local favorito
 p_local_modelo = 50 + (spread_global * 2)  # muy simple
 p_local_modelo = max(1, min(99, p_local_modelo))
 p_visita_modelo = 100 - p_local_modelo
@@ -451,7 +654,6 @@ st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
 
 covers, overs = 0, 0
-# desviación fija por deporte (curva normal más realista)
 if liga == "NBA":
     desv = 12.0
 elif liga == "NFL":
@@ -462,7 +664,6 @@ else:  # NHL
 for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local_global, desv))
     sim_v = max(0, random.gauss(pts_visita_global, desv))
-    # spread: LOCAL + spread_casa debe ser >= visita
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
     if (sim_l + sim_v) > total_casa:
@@ -482,24 +683,20 @@ st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
 umbral = 55.0
 recs = []
 
-# Probabilidades de spread para LOCAL y VISITA
-prob_cover_local = prob_cover                # ya calculada: prob de que LOCAL cubra
-prob_cover_visita = 100.0 - prob_cover       # prob. de que VISITA cubra
+prob_cover_local = prob_cover
+prob_cover_visita = 100.0 - prob_cover
 
-# SPREAD LOCAL
 if prob_cover_local >= umbral:
     recs.append(
         f"🟢 Spread GLOBAL: {local_name or 'LOCAL'} {spread_casa:+.1f} → {prob_cover_local:.1f}%"
     )
 
-# SPREAD VISITA
 if prob_cover_visita >= umbral:
     spread_visita_line = -spread_casa
     recs.append(
         f"🟢 Spread GLOBAL: {visita_name or 'VISITA'} {spread_visita_line:+.1f} → {prob_cover_visita:.1f}%"
     )
 
-# TOTALES: OVER / UNDER
 prob_over_val = prob_over
 prob_under_val = 100.0 - prob_over_val
 
@@ -526,9 +723,6 @@ st.subheader("8) Edge del modelo vs casa")
 st.write(f"Línea MODELO (LOCAL): **{line_modelo:+.1f}**")
 st.write(f"Línea CASA   (LOCAL): **{spread_casa:+.1f}**")
 
-# Edge en puntos:
-# edge_local > 0  → la línea de la casa es más suave con el favorito → valor en LOCAL
-# edge_local < 0  → la casa es más agresiva con el favorito → valor en VISITA
 edge_local_pts = spread_casa - line_modelo
 edge_visita_pts = -edge_local_pts
 
