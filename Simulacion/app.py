@@ -20,12 +20,12 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # =========================================================
 # KEYS Y SEASON (Discovery Lab / SportsDataIO)
 # =========================================================
-# ⚠️ Pega aquí TUS KEYS COMPLETAS (no solo el inicio/fin):
+# ⚠️ Pega aquí TUS KEYS COMPLETAS:
 API_NBA_KEY = "2fb2271ae32f415d970aebbab19254fe"  # Discovery Lab NBA Fantasy
 API_NFL_KEY = "9c2d0016c9a74ba9b730b70bca6bc6b5"  # Discovery Lab NFL Fantasy
 
-NFL_SEASON = "2025REG"   # Ajusta según docs (ej: 2024REG, 2025REG)
-NBA_SEASON = "2025"      # Ajusta según docs (ej: 2024, 2025)
+NFL_SEASON = "2025REG"   # Ajusta según docs de NFL (ej: 2024REG, 2025REG)
+NBA_SEASON = "2025"      # Ajusta según docs de NBA (ej: 2024, 2025)
 
 
 # =========================================================
@@ -34,10 +34,9 @@ NBA_SEASON = "2025"      # Ajusta según docs (ej: 2024, 2025)
 @st.cache_data(ttl=600)
 def cargar_nfl_desde_api(api_key: str, season: str):
     """Standings NFL -> puntos a favor / en contra por juego."""
-    url = f"https://api.sportsdata.io/v3/nfl/scores/json/Standings/{season}"
-    headers = {"Ocp-Apim-Subscription-Key": api_key}
+    url = f"https://api.sportsdata.io/v3/nfl/scores/json/Standings/{season}?key={api_key}"
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
             return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NFL Standings)"
         data = resp.json()
@@ -70,10 +69,9 @@ def cargar_nba_desde_api(api_key: str, season: str):
     TeamSeasonStats NBA -> puntos a favor/en contra por juego
     y stats avanzadas si están disponibles (pace, off/def rating).
     """
-    url = f"https://api.sportsdata.io/v3/nba/stats/json/TeamSeasonStats/{season}"
-    headers = {"Ocp-Apim-Subscription-Key": api_key}
+    url = f"https://api.sportsdata.io/v3/nba/stats/json/TeamSeasonStats/{season}?key={api_key}"
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
             return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA TeamSeasonStats)"
         data = resp.json()
@@ -86,7 +84,7 @@ def cargar_nba_desde_api(api_key: str, season: str):
         pf_pg = t.get("PointsPerGame", 0.0) or 0.0
         pa_pg = t.get("OpponentPointsPerGame", 0.0) or 0.0
 
-        # Estos campos pueden variar según el plan; si no existen, regresan 0
+        # Estos campos dependen del plan / schema. Si no existen, quedan 0.
         pace = t.get("Possessions", 0.0) or t.get("Pace", 0.0) or 0.0
         off_rating = t.get("OffensiveRating", 0.0) or 0.0
         def_rating = t.get("DefensiveRating", 0.0) or 0.0
@@ -151,7 +149,6 @@ with col_l:
                 team = nba_data[lookup]
                 st.session_state["l_anota_global"] = team["pf_pg"]
                 st.session_state["l_permite_global"] = team["pa_pg"]
-                # Si hay pace / ratings, los usamos como últimos 5 aprox.
                 if team["pace"]:
                     st.session_state["pace_local_5"] = team["pace"]
                 if team["off_rating"]:
@@ -399,7 +396,10 @@ if liga == "NFL":
 
 elif liga == "NBA":
     # pace medio de los 2, si no hay usa liga
-    if pace_local_5 > 0 and pace_visita_5 > 0:
+    if 'pace_local_5' in st.session_state and 'pace_visita_5' in st.session_state and \
+       st.session_state['pace_local_5'] > 0 and st.session_state['pace_visita_5'] > 0:
+        pace_local_5 = st.session_state['pace_local_5']
+        pace_visita_5 = st.session_state['pace_visita_5']
         pace_med = (pace_local_5 + pace_visita_5) / 2
     else:
         pace_med = pace_liga
