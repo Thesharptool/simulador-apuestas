@@ -21,8 +21,8 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # =========================================================
 # 🔑 API KEYS – PÉGALAS AQUÍ
 # =========================================================
-API_NBA_KEY = "TU_API_KEY_NBA_AQUI"  # 2fb2271ae32f415d970aebbab19254fe
-API_NFL_KEY = "TU_API_KEY_NFL_AQUI"  # 9c2d0016c9a74ba9b730b70bca6bc6b5
+API_NBA_KEY = "2fb2271ae32f415d970aebbab19254fe"  # 2fb2271ae32f415d970aebbab19254fe
+API_NFL_KEY = "9c2d0016c9a74ba9b730b70bca6bc6b5"  # 9c2d0016c9a74ba9b730b70bca6bc6b5
 
 # =========================================================
 # BASE URL DISCOVERY LAB
@@ -702,3 +702,4 @@ else:
     )
 
 st.caption("Pon los moneylines para calcular el edge de forma más fina.")
+
