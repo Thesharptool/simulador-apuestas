@@ -23,10 +23,10 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # ⚠️ Pega aquí TUS KEYS COMPLETAS:
 API_NBA_KEY = "2fb2271ae32f415d970aebbab19254fe"  # Discovery Lab NBA Fantasy
 API_NFL_KEY = "9c2d0016c9a74ba9b730b70bca6bc6b5"  # Discovery Lab NFL Fantasy
+# (las que ves en tu pantalla: la que empieza con 2fb... para NBA y la que empieza con 9c2... para NFL)
 
 NFL_SEASON = "2025REG"   # Ajusta según docs de NFL (ej: 2024REG, 2025REG)
 NBA_SEASON = "2025"      # Ajusta según docs de NBA (ej: 2024, 2025)
-
 
 # =========================================================
 # FUNCIONES DE CARGA DESDE API
@@ -66,14 +66,14 @@ def cargar_nfl_desde_api(api_key: str, season: str):
 @st.cache_data(ttl=600)
 def cargar_nba_desde_api(api_key: str, season: str):
     """
-    TeamSeasonStats NBA -> puntos a favor/en contra por juego
-    y stats avanzadas si están disponibles (pace, off/def rating).
+    Standings NBA -> puntos a favor / en contra por juego.
+    Usamos el endpoint de SCORES, que sí está incluido en Discovery Lab Fantasy.
     """
-    url = f"https://api.sportsdata.io/v3/nba/stats/json/TeamSeasonStats/{season}?key={api_key}"
+    url = f"https://api.sportsdata.io/v3/nba/scores/json/Standings/{season}?key={api_key}"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA TeamSeasonStats)"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA Standings)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NBA: {e}"
@@ -81,23 +81,26 @@ def cargar_nba_desde_api(api_key: str, season: str):
     nba_teams = {}
     for t in data:
         name = (t.get("Name") or "").lower()
-        pf_pg = t.get("PointsPerGame", 0.0) or 0.0
-        pa_pg = t.get("OpponentPointsPerGame", 0.0) or 0.0
 
-        # Estos campos dependen del plan / schema. Si no existen, quedan 0.
-        pace = t.get("Possessions", 0.0) or t.get("Pace", 0.0) or 0.0
-        off_rating = t.get("OffensiveRating", 0.0) or 0.0
-        def_rating = t.get("DefensiveRating", 0.0) or 0.0
+        wins = t.get("Wins", 0) or 0
+        losses = t.get("Losses", 0) or 0
+        pf = t.get("PointsFor", 0.0) or 0.0
+        pa = t.get("PointsAgainst", 0.0) or 0.0
+
+        games_raw = t.get("Games", 0) or 0
+        played = wins + losses + (t.get("Ties", 0) or 0)
+        games_played = played if played > 0 else games_raw if games_raw > 0 else 1
 
         nba_teams[name] = {
-            "pf_pg": round(pf_pg, 2),
-            "pa_pg": round(pa_pg, 2),
-            "pace": round(pace, 2) if pace else 0.0,
-            "off_rating": round(off_rating, 2) if off_rating else 0.0,
-            "def_rating": round(def_rating, 2) if def_rating else 0.0,
+            "pf_pg": round(pf / games_played, 2),
+            "pa_pg": round(pa / games_played, 2),
+            # En este plan no tenemos pace/ratings directos → los pones manual
+            "pace": 0.0,
+            "off_rating": 0.0,
+            "def_rating": 0.0,
         }
-    return nba_teams, ""
 
+    return nba_teams, ""
 
 # =========================================================
 # CARGA SEGÚN LIGA
@@ -120,7 +123,6 @@ elif liga == "NBA":
         st.success(f"✅ Datos NBA cargados — {len(nba_data)} equipos ({NBA_SEASON})")
 else:
     st.info("🏒 NHL: no hay carga automática, llena los campos manualmente.")
-
 
 # =========================================================
 # 1) DATOS DEL PARTIDO
@@ -149,12 +151,6 @@ with col_l:
                 team = nba_data[lookup]
                 st.session_state["l_anota_global"] = team["pf_pg"]
                 st.session_state["l_permite_global"] = team["pa_pg"]
-                if team["pace"]:
-                    st.session_state["pace_local_5"] = team["pace"]
-                if team["off_rating"]:
-                    st.session_state["off_local_5"] = team["off_rating"]
-                if team["def_rating"]:
-                    st.session_state["def_local_5"] = team["def_rating"]
                 st.success(f"LOCAL rellenado con datos NBA de {local_name}")
             else:
                 st.error("No encontré ese equipo en NBA")
@@ -194,12 +190,6 @@ with col_v:
                 team = nba_data[lookup]
                 st.session_state["v_anota_global"] = team["pf_pg"]
                 st.session_state["v_permite_global"] = team["pa_pg"]
-                if team["pace"]:
-                    st.session_state["pace_visita_5"] = team["pace"]
-                if team["off_rating"]:
-                    st.session_state["off_visita_5"] = team["off_rating"]
-                if team["def_rating"]:
-                    st.session_state["def_visita_5"] = team["def_rating"]
                 st.success(f"VISITA rellenado con datos NBA de {visita_name}")
             else:
                 st.error("No encontré ese equipo en NBA")
@@ -244,48 +234,33 @@ if liga == "NFL":
 elif liga == "NBA":
     st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
     st.caption(
-        "Llena estos datos para que el total de NBA se acerque más a las líneas reales. "
-        "Si usas los botones de rellenar, se cargan desde TeamSeasonStats."
+        "Llena estos datos para que el total de NBA se acerque más a las líneas reales."
     )
     nb1, nb2 = st.columns(2)
 
     with nb1:
         pace_local_5 = st.number_input(
-            "PACE LOCAL (posesiones últimos 5)",
-            value=st.session_state.get("pace_local_5", 0.0),
-            step=0.1,
-            key="pace_local_5",
+            "PACE LOCAL (posesiones últimos 5)", value=0.0, step=0.1
         )
         off_local_5 = st.number_input(
-            "Ofensiva LOCAL (pts/100 poss últimos 5)",
-            value=st.session_state.get("off_local_5", 0.0),
-            step=0.1,
-            key="off_local_5",
+            "Ofensiva LOCAL (pts/100 poss últimos 5)", value=0.0, step=0.1
         )
         def_local_5 = st.number_input(
             "Defensiva LOCAL (pts permitidos/100 poss últimos 5)",
-            value=st.session_state.get("def_local_5", 0.0),
+            value=0.0,
             step=0.1,
-            key="def_local_5",
         )
     with nb2:
         pace_visita_5 = st.number_input(
-            "PACE VISITA (posesiones últimos 5)",
-            value=st.session_state.get("pace_visita_5", 0.0),
-            step=0.1,
-            key="pace_visita_5",
+            "PACE VISITA (posesiones últimos 5)", value=0.0, step=0.1
         )
         off_visita_5 = st.number_input(
-            "Ofensiva VISITA (pts/100 poss últimos 5)",
-            value=st.session_state.get("off_visita_5", 0.0),
-            step=0.1,
-            key="off_visita_5",
+            "Ofensiva VISITA (pts/100 poss últimos 5)", value=0.0, step=0.1
         )
         def_visita_5 = st.number_input(
             "Defensiva VISITA (pts permitidos/100 poss últimos 5)",
-            value=st.session_state.get("def_visita_5", 0.0),
+            value=0.0,
             step=0.1,
-            key="def_visita_5",
         )
 
     pace_liga = st.number_input("Pace promedio liga (NBA)", value=99.0, step=0.1)
@@ -396,10 +371,7 @@ if liga == "NFL":
 
 elif liga == "NBA":
     # pace medio de los 2, si no hay usa liga
-    if 'pace_local_5' in st.session_state and 'pace_visita_5' in st.session_state and \
-       st.session_state['pace_local_5'] > 0 and st.session_state['pace_visita_5'] > 0:
-        pace_local_5 = st.session_state['pace_local_5']
-        pace_visita_5 = st.session_state['pace_visita_5']
+    if pace_local_5 > 0 and pace_visita_5 > 0:
         pace_med = (pace_local_5 + pace_visita_5) / 2
     else:
         pace_med = pace_liga
