@@ -21,15 +21,15 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # KEYS Y SEASON (SportsDataIO ODDS)
 # =========================================================
 
-# 👇 AQUÍ VAN TUS KEYS REALES (ODDS)
+# 👇 TUS KEYS REALES (ODDS)
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Endpoints base de ODDS (según tu portal)
+# Endpoints base ODDS
 BASE_NBA = "https://api.sportsdata.io/api/nba/odds/json"
 BASE_NFL = "https://api.sportsdata.io/api/nfl/odds/json"
 
-# Season: en ODDS usan formato tipo 2025REG, 2024POST, etc.
+# Season (ODDS) – formato tipo 2025REG, 2025PRE, 2025POST
 NBA_SEASON = "2025REG"
 NFL_SEASON = "2025REG"
 
@@ -41,10 +41,10 @@ NFL_SEASON = "2025REG"
 def cargar_nfl_desde_api(api_key: str, season: str):
     """
     NFL Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
-    Endpoint:
-      https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/{season}
+    https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/{season}
     """
     url = f"{BASE_NFL}/TeamSeasonStats/{season}?key={api_key}"
+
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
@@ -54,34 +54,44 @@ def cargar_nfl_desde_api(api_key: str, season: str):
         return {}, f"Error de conexión NFL: {e}"
 
     nfl_teams = {}
-    for t in data:
-        # En TeamSeasonStats normalmente viene Name y/o Team
-        name = (t.get("Name") or t.get("Team") or "").lower()
 
-        # En NFL Odds TeamSeasonStats vienen PointsFor / PointsAgainst por temporada.
-        # Algunos esquemas traen también 'PointsForPerGame', pero usamos PointsFor y dividimos
-        # entre Games si hace falta. Para simplificar, si ya viene 'PointsForPerGame', lo usamos.
+    for t in data:
+        # Varias formas de nombrar al equipo
+        full = (t.get("FullName") or "").lower()      # ej. "dallas cowboys"
+        name = (t.get("Name") or "").lower()          # ej. "cowboys"
+        abbr = (t.get("Team") or "").lower()          # ej. "dal"
+        key  = (t.get("Key") or "").lower()           # muchas veces igual que Team
+
+        # Puntos
         pf_pg = t.get("PointsForPerGame")
         pa_pg = t.get("PointsAgainstPerGame")
 
         if pf_pg is None or pa_pg is None:
             pf = t.get("PointsFor", 0.0) or 0.0
             pa = t.get("PointsAgainst", 0.0) or 0.0
-            games = t.get("Games", None)
-            if games is None:
-                # fallback con Wins/Losses/Ties si no trae Games
-                wins = t.get("Wins", 0) or 0
-                losses = t.get("Losses", 0) or 0
-                ties = t.get("Ties", 0) or 0
-                games = wins + losses + ties
-            games_played = games if games and games > 0 else 1
+            games = t.get("Games", 0) or 0
+            games_played = games if games > 0 else 1
             pf_pg = pf / games_played
             pa_pg = pa / games_played
 
-        nfl_teams[name] = {
+        stats = {
             "pf_pg": round(pf_pg, 2),
             "pa_pg": round(pa_pg, 2),
         }
+
+        # Guardamos varias llaves que apuntan al mismo dict
+        posibles_llaves = {
+            full,
+            name,
+            abbr,
+            key,
+            full.replace(" ", "") if full else "",
+            name.replace(" ", "") if name else "",
+        }
+
+        for k in posibles_llaves:
+            if k:
+                nfl_teams[k] = stats
 
     return nfl_teams, ""
 
@@ -90,10 +100,10 @@ def cargar_nfl_desde_api(api_key: str, season: str):
 def cargar_nba_desde_api(api_key: str, season: str):
     """
     NBA Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
-    Endpoint:
-      https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/{season}
+    https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/{season}
     """
     url = f"{BASE_NBA}/TeamSeasonStats/{season}?key={api_key}"
+
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
@@ -103,21 +113,34 @@ def cargar_nba_desde_api(api_key: str, season: str):
         return {}, f"Error de conexión NBA: {e}"
 
     nba_teams = {}
-    for t in data:
-        # Name o Team según esquema
-        name = (t.get("Name") or t.get("Team") or "").lower()
 
-        # En TeamSeasonStats de NBA Odds normalmente vienen:
-        # PointsPerGame, OppPointsPerGame, PossessionsPerGame (pace)
+    for t in data:
+        full = (t.get("FullName") or "").lower()
+        name = (t.get("Name") or "").lower()
+        abbr = (t.get("Team") or "").lower()
+
         pf = t.get("PointsPerGame", 0.0) or 0.0
         pa = t.get("OppPointsPerGame", 0.0) or 0.0
+        pace = t.get("PossessionsPerGame", 0.0) or 0.0
 
-        nba_teams[name] = {
+        stats = {
             "pf_pg": round(pf, 2),
             "pa_pg": round(pa, 2),
-            # Si luego quieres, aquí puedes guardar también el pace:
-            # "pace": t.get("PossessionsPerGame")
+            "pace": round(pace, 2),
         }
+
+        posibles_llaves = {
+            full,
+            name,
+            abbr,
+            full.replace(" ", "") if full else "",
+            name.replace(" ", "") if name else "",
+        }
+
+        for k in posibles_llaves:
+            if k:
+                nba_teams[k] = stats
+
     return nba_teams, ""
 
 # =========================================================
@@ -156,22 +179,39 @@ with col_l:
 
     if liga == "NFL":
         if st.button("Rellenar LOCAL desde NFL"):
-            lookup = local_name.strip().lower()
-            if lookup in nfl_data:
-                st.session_state["l_anota_global"] = nfl_data[lookup]["pf_pg"]
-                st.session_state["l_permite_global"] = nfl_data[lookup]["pa_pg"]
-                st.success(f"LOCAL rellenado con datos reales de {local_name}")
-            else:
+            lookup = local_name.strip().lower().replace(" ", "")
+            # probamos con y sin espacios
+            candidatos = {
+                lookup,
+                local_name.strip().lower(),
+            }
+            encontrado = False
+            for key_try in candidatos:
+                if key_try in nfl_data:
+                    st.session_state["l_anota_global"] = nfl_data[key_try]["pf_pg"]
+                    st.session_state["l_permite_global"] = nfl_data[key_try]["pa_pg"]
+                    st.success(f"LOCAL rellenado con datos reales de {local_name}")
+                    encontrado = True
+                    break
+            if not encontrado:
                 st.error("No encontré ese equipo en NFL")
 
     if liga == "NBA":
         if st.button("Rellenar LOCAL desde NBA"):
-            lookup = local_name.strip().lower()
-            if lookup in nba_data:
-                st.session_state["l_anota_global"] = nba_data[lookup]["pf_pg"]
-                st.session_state["l_permite_global"] = nba_data[lookup]["pa_pg"]
-                st.success(f"LOCAL rellenado con datos reales de {local_name}")
-            else:
+            lookup = local_name.strip().lower().replace(" ", "")
+            candidatos = {
+                lookup,
+                local_name.strip().lower(),
+            }
+            encontrado = False
+            for key_try in candidatos:
+                if key_try in nba_data:
+                    st.session_state["l_anota_global"] = nba_data[key_try]["pf_pg"]
+                    st.session_state["l_permite_global"] = nba_data[key_try]["pa_pg"]
+                    st.success(f"LOCAL rellenado con datos reales de {local_name}")
+                    encontrado = True
+                    break
+            if not encontrado:
                 st.error("No encontré ese equipo en NBA")
 
     st.markdown("**Promedios GLOBAL del LOCAL**")
@@ -194,22 +234,38 @@ with col_v:
 
     if liga == "NFL":
         if st.button("Rellenar VISITA desde NFL"):
-            lookup = visita_name.strip().lower()
-            if lookup in nfl_data:
-                st.session_state["v_anota_global"] = nfl_data[lookup]["pf_pg"]
-                st.session_state["v_permite_global"] = nfl_data[lookup]["pa_pg"]
-                st.success(f"VISITA rellenado con datos reales de {visita_name}")
-            else:
+            lookup = visita_name.strip().lower().replace(" ", "")
+            candidatos = {
+                lookup,
+                visita_name.strip().lower(),
+            }
+            encontrado = False
+            for key_try in candidatos:
+                if key_try in nfl_data:
+                    st.session_state["v_anota_global"] = nfl_data[key_try]["pf_pg"]
+                    st.session_state["v_permite_global"] = nfl_data[key_try]["pa_pg"]
+                    st.success(f"VISITA rellenado con datos reales de {visita_name}")
+                    encontrado = True
+                    break
+            if not encontrado:
                 st.error("No encontré ese equipo en NFL")
 
     if liga == "NBA":
         if st.button("Rellenar VISITA desde NBA"):
-            lookup = visita_name.strip().lower()
-            if lookup in nba_data:
-                st.session_state["v_anota_global"] = nba_data[lookup]["pf_pg"]
-                st.session_state["v_permite_global"] = nba_data[lookup]["pa_pg"]
-                st.success(f"VISITA rellenado con datos reales de {visita_name}")
-            else:
+            lookup = visita_name.strip().lower().replace(" ", "")
+            candidatos = {
+                lookup,
+                visita_name.strip().lower(),
+            }
+            encontrado = False
+            for key_try in candidatos:
+                if key_try in nba_data:
+                    st.session_state["v_anota_global"] = nba_data[key_try]["pf_pg"]
+                    st.session_state["v_permite_global"] = nba_data[key_try]["pa_pg"]
+                    st.success(f"VISITA rellenado con datos reales de {visita_name}")
+                    encontrado = True
+                    break
+            if not encontrado:
                 st.error("No encontré ese equipo en NBA")
 
     st.markdown("**Promedios GLOBAL del VISITA**")
@@ -478,7 +534,6 @@ with col_total:
 with st.expander("🔍 Comparación de spreads (GLOBAL)", expanded=True):
     st.write(f"- Modelo (formato casa): **LOCAL {line_modelo:+.1f}**")
     st.write(f"- Casa: **LOCAL {spread_casa:+.1f}**")
-    # CASA - MODELO, para leer fácil la dirección del edge
     dif_spread = spread_casa - line_modelo
     st.write(f"- **DIF. SPREAD (GLOBAL): {dif_spread:+.1f} pts**")
 
@@ -488,7 +543,6 @@ with st.expander("🔍 Comparación de totales (GLOBAL)", expanded=True):
     dif_total = total_global - total_casa
     st.write(f"- **DIF. TOTAL (GLOBAL): {dif_total:+.1f} pts**")
 
-# alerta de trap line
 trap_msgs = []
 if abs(dif_spread) >= 5:
     trap_msgs.append("spread")
@@ -533,8 +587,7 @@ st.write(
 # 5c) Comparativa de probabilidades (modelo vs casino)
 # =========================================================
 st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
-# modelo: muy sencillo, si spread modelo > 0 => local favorito
-p_local_modelo = 50 + (spread_global * 2)  # muy simple
+p_local_modelo = 50 + (spread_global * 2)  # simple
 p_local_modelo = max(1, min(99, p_local_modelo))
 p_visita_modelo = 100 - p_local_modelo
 
@@ -550,7 +603,6 @@ st.subheader("6) Simulación Monte Carlo 🟦 (GLOBAL)")
 num_sims = st.slider("Número de simulaciones (GLOBAL)", 1000, 50000, 10000, 1000)
 
 covers, overs = 0, 0
-# desviación fija por deporte (curva normal más realista)
 if liga == "NBA":
     desv = 12.0
 elif liga == "NFL":
@@ -561,7 +613,6 @@ else:  # NHL
 for _ in range(num_sims):
     sim_l = max(0, random.gauss(pts_local_global, desv))
     sim_v = max(0, random.gauss(pts_visita_global, desv))
-    # spread: LOCAL + spread_casa debe ser >= visita
     if (sim_l - sim_v) + spread_casa >= 0:
         covers += 1
     if (sim_l + sim_v) > total_casa:
@@ -581,24 +632,20 @@ st.subheader("7) Apuestas recomendadas (si ≥ 55%)")
 umbral = 55.0
 recs = []
 
-# Probabilidades de spread para LOCAL y VISITA
-prob_cover_local = prob_cover                # ya calculada: prob de que LOCAL cubra
-prob_cover_visita = 100.0 - prob_cover       # prob. de que VISITA cubra
+prob_cover_local = prob_cover
+prob_cover_visita = 100.0 - prob_cover
 
-# SPREAD LOCAL
 if prob_cover_local >= umbral:
     recs.append(
         f"🟢 Spread GLOBAL: {local_name or 'LOCAL'} {spread_casa:+.1f} → {prob_cover_local:.1f}%"
     )
 
-# SPREAD VISITA
 if prob_cover_visita >= umbral:
     spread_visita_line = -spread_casa
     recs.append(
         f"🟢 Spread GLOBAL: {visita_name or 'VISITA'} {spread_visita_line:+.1f} → {prob_cover_visita:.1f}%"
     )
 
-# TOTALES: OVER / UNDER
 prob_over_val = prob_over
 prob_under_val = 100.0 - prob_over_val
 
@@ -625,9 +672,6 @@ st.subheader("8) Edge del modelo vs casa")
 st.write(f"Línea MODELO (LOCAL): **{line_modelo:+.1f}**")
 st.write(f"Línea CASA   (LOCAL): **{spread_casa:+.1f}**")
 
-# Edge en puntos:
-# edge_local > 0  → la línea de la casa es más suave con el favorito → valor en LOCAL
-# edge_local < 0  → la casa es más agresiva con el favorito → valor en VISITA
 edge_local_pts = spread_casa - line_modelo
 edge_visita_pts = -edge_local_pts
 
