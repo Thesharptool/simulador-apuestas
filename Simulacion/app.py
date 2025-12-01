@@ -18,90 +18,105 @@ st.markdown(
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=True)
 
 # =========================================================
-# KEYS Y SEASON (SportsDataIO Core/Odds)
+# KEYS Y SEASON (SportsDataIO ODDS)
 # =========================================================
 
-# 👇 AQUÍ VAN TUS KEYS REALES (ODDS / CORE)
+# 👇 AQUÍ VAN TUS KEYS REALES (ODDS)
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Endpoints base de CORE (scores), que vienen con tu plan Core+Odds
-# Antes usábamos /fantasy/json, ahora usamos /scores/json
-BASE_NBA = "https://api.sportsdata.io/api/nba/scores/json"
-BASE_NFL = "https://api.sportsdata.io/api/nfl/scores/json"
+# Endpoints base de ODDS (según tu portal)
+BASE_NBA = "https://api.sportsdata.io/api/nba/odds/json"
+BASE_NFL = "https://api.sportsdata.io/api/nfl/odds/json"
 
-# Season: usan año (ej: 2015, 2016…)
-NBA_SEASON = "2025"
-NFL_SEASON = "2025"
+# Season: en ODDS usan formato tipo 2025REG, 2024POST, etc.
+NBA_SEASON = "2025REG"
+NFL_SEASON = "2025REG"
 
 # =========================================================
-# FUNCIONES DE CARGA DESDE API (CORE/ODDS)
+# FUNCIONES DE CARGA DESDE API (ODDS: TeamSeasonStats)
 # =========================================================
 
 @st.cache_data(ttl=600)
 def cargar_nfl_desde_api(api_key: str, season: str):
     """
-    Standings NFL (Core) -> puntos a favor / en contra por juego.
-    Endpoint típico:
-      https://api.sportsdata.io/api/nfl/scores/json/Standings/{season}?key=...
+    NFL Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
+    Endpoint:
+      https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/{season}
     """
-    url = f"{BASE_NFL}/Standings/{season}?key={api_key}"
+    url = f"{BASE_NFL}/TeamSeasonStats/{season}?key={api_key}"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NFL Standings)"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NFL TeamSeasonStats)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NFL: {e}"
 
     nfl_teams = {}
     for t in data:
-        name = (t.get("Name") or "").lower()
-        wins = t.get("Wins", 0) or 0
-        losses = t.get("Losses", 0) or 0
-        ties = t.get("Ties", 0) or 0
-        pf = t.get("PointsFor", 0.0) or 0.0
-        pa = t.get("PointsAgainst", 0.0) or 0.0
+        # En TeamSeasonStats normalmente viene Name y/o Team
+        name = (t.get("Name") or t.get("Team") or "").lower()
 
-        played = wins + losses + ties
-        games_played = played if played > 0 else 1
+        # En NFL Odds TeamSeasonStats vienen PointsFor / PointsAgainst por temporada.
+        # Algunos esquemas traen también 'PointsForPerGame', pero usamos PointsFor y dividimos
+        # entre Games si hace falta. Para simplificar, si ya viene 'PointsForPerGame', lo usamos.
+        pf_pg = t.get("PointsForPerGame")
+        pa_pg = t.get("PointsAgainstPerGame")
+
+        if pf_pg is None or pa_pg is None:
+            pf = t.get("PointsFor", 0.0) or 0.0
+            pa = t.get("PointsAgainst", 0.0) or 0.0
+            games = t.get("Games", None)
+            if games is None:
+                # fallback con Wins/Losses/Ties si no trae Games
+                wins = t.get("Wins", 0) or 0
+                losses = t.get("Losses", 0) or 0
+                ties = t.get("Ties", 0) or 0
+                games = wins + losses + ties
+            games_played = games if games and games > 0 else 1
+            pf_pg = pf / games_played
+            pa_pg = pa / games_played
 
         nfl_teams[name] = {
-            "pf_pg": round(pf / games_played, 2),
-            "pa_pg": round(pa / games_played, 2),
+            "pf_pg": round(pf_pg, 2),
+            "pa_pg": round(pa_pg, 2),
         }
+
     return nfl_teams, ""
 
 
 @st.cache_data(ttl=600)
 def cargar_nba_desde_api(api_key: str, season: str):
     """
-    Standings NBA (Core) -> puntos a favor / en contra por juego.
-    Endpoint típico:
-      https://api.sportsdata.io/api/nba/scores/json/Standings/{season}?key=...
+    NBA Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
+    Endpoint:
+      https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/{season}
     """
-    url = f"{BASE_NBA}/Standings/{season}?key={api_key}"
+    url = f"{BASE_NBA}/TeamSeasonStats/{season}?key={api_key}"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA Standings)"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA TeamSeasonStats)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NBA: {e}"
 
     nba_teams = {}
     for t in data:
-        name = (t.get("Name") or "").lower()
-        wins = t.get("Wins", 0) or 0
-        losses = t.get("Losses", 0) or 0
-        pf = t.get("PointsFor", 0.0) or 0.0
-        pa = t.get("PointsAgainst", 0.0) or 0.0
+        # Name o Team según esquema
+        name = (t.get("Name") or t.get("Team") or "").lower()
 
-        games_played = max(1, wins + losses)
+        # En TeamSeasonStats de NBA Odds normalmente vienen:
+        # PointsPerGame, OppPointsPerGame, PossessionsPerGame (pace)
+        pf = t.get("PointsPerGame", 0.0) or 0.0
+        pa = t.get("OppPointsPerGame", 0.0) or 0.0
 
         nba_teams[name] = {
-            "pf_pg": round(pf / games_played, 2),
-            "pa_pg": round(pa / games_played, 2),
+            "pf_pg": round(pf, 2),
+            "pa_pg": round(pa, 2),
+            # Si luego quieres, aquí puedes guardar también el pace:
+            # "pace": t.get("PossessionsPerGame")
         }
     return nba_teams, ""
 
