@@ -32,76 +32,57 @@ NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStat
 NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
 
 # =========================================================
-# HELPERS PARA ENCONTRAR CAMPOS DE PUNTOS
+# HELPERS PARA ENCONTRAR CAMPOS DE PUNTOS (NFL)
 # =========================================================
 
 def _get_nfl_points_pg(obj: dict):
     """
-    Intenta encontrar puntos a favor / en contra por juego
-    usando nombres típicos de SportsDataIO u otros.
+    A partir de TeamSeasonStats (ODDS) calcula puntos a favor / en contra por juego
+    usando los campos que vimos en tu JSON:
+      - Score
+      - OpponentScore
+      - TotalScore
+      - Wins / Losses / Ties
+      - (opcionalmente) PointsFor / PointsAgainst / Games si existen
     """
-    pf_pg = None
-    pa_pg = None
 
-    # 1) buscar *_PerGame directo
-    for k, v in obj.items():
-        if not isinstance(v, (int, float)):
-            continue
-        name = k.lower()
-        if "pointsforpergame" in name:
-            pf_pg = float(v)
-        if "pointsagainstpergame" in name:
-            pa_pg = float(v)
+    # ----- Totales de puntos -----
+    score = obj.get("PointsFor")
+    opp_score = obj.get("PointsAgainst")
 
-    # 2) si no hay *_PerGame, buscar totales y juegos
-    if pf_pg is None or pa_pg is None:
-        points_for = None
-        points_against = None
-        games = None
+    # Si no existen esos, usamos Score / OpponentScore que sí vimos en tu captura
+    if score is None:
+        score = obj.get("Score")
+    if opp_score is None:
+        opp_score = obj.get("OpponentScore")
 
-        for k, v in obj.items():
-            if isinstance(v, (int, float)):
-                name = k.lower()
-                if "pointsfor" in name:
-                    points_for = float(v)
-                if "pointsagainst" in name:
-                    points_against = float(v)
-                if "games" in name or "gp" in name:
-                    games = int(v)
+    # Si solo viene TotalScore + uno de los dos, calculamos el otro
+    total_score = obj.get("TotalScore")
+    if score is None and total_score is not None and opp_score is not None:
+        score = total_score - opp_score
+    if opp_score is None and total_score is not None and score is not None:
+        opp_score = total_score - score
 
-        if games is None or games <= 0:
-            games = 1
+    # Aseguramos que no sean None
+    if score is None:
+        score = 0.0
+    if opp_score is None:
+        opp_score = 0.0
 
-        if pf_pg is None and points_for is not None:
-            pf_pg = points_for / games
-        if pa_pg is None and points_against is not None:
-            pa_pg = points_against / games
+    # ----- Número de partidos -----
+    wins = obj.get("Wins") or 0
+    losses = obj.get("Losses") or 0
+    ties = obj.get("Ties") or 0
 
-    # 3) último intento: nombres genéricos con "score"
-    if pf_pg is None or pa_pg is None:
-        score_for = None
-        score_against = None
-        games = obj.get("Games", 1) or 1
+    games = obj.get("Games")
+    if games is None or games == 0:
+        games = wins + losses + ties
+    if games == 0:
+        games = 1  # por si acaso
 
-        for k, v in obj.items():
-            if not isinstance(v, (int, float)):
-                continue
-            name = k.lower()
-            if ("score" in name or "points" in name) and "opp" not in name and "against" not in name:
-                score_for = float(v)
-            if ("opp" in name or "against" in name) and ("score" in name or "points" in name):
-                score_against = float(v)
-
-        if pf_pg is None and score_for is not None:
-            pf_pg = score_for / games
-        if pa_pg is None and score_against is not None:
-            pa_pg = score_against / games
-
-    # 4) si aun así no hay nada, regresa 0 pero nunca None
-    if pf_pg is None:
-        pf_pg = 0.0
-    if pa_pg is None:
-        pa_pg = 0.0
+    # ----- Puntos por juego -----
+    pf_pg = score / games
+    pa_pg = opp_score / games
 
     return round(pf_pg, 2), round(pa_pg, 2)
 
