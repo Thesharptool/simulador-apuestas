@@ -25,13 +25,85 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Labels de temporada para mostrar
-NBA_SEASON_LABEL = "2025REG"
 NFL_SEASON_LABEL = "2025REG"
+NBA_SEASON_LABEL = "2025REG"
 
-# Endpoints EXACTOS (2025REG fijo en la URL)
 NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
 NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
+
+# =========================================================
+# HELPERS PARA ENCONTRAR CAMPOS DE PUNTOS
+# =========================================================
+
+def _get_nfl_points_pg(obj: dict):
+    """
+    Intenta encontrar puntos a favor / en contra por juego
+    usando nombres típicos de SportsDataIO u otros.
+    """
+    pf_pg = None
+    pa_pg = None
+
+    # 1) buscar *_PerGame directo
+    for k, v in obj.items():
+        if not isinstance(v, (int, float)):
+            continue
+        name = k.lower()
+        if "pointsforpergame" in name:
+            pf_pg = float(v)
+        if "pointsagainstpergame" in name:
+            pa_pg = float(v)
+
+    # 2) si no hay *_PerGame, buscar totales y juegos
+    if pf_pg is None or pa_pg is None:
+        points_for = None
+        points_against = None
+        games = None
+
+        for k, v in obj.items():
+            if isinstance(v, (int, float)):
+                name = k.lower()
+                if "pointsfor" in name:
+                    points_for = float(v)
+                if "pointsagainst" in name:
+                    points_against = float(v)
+                if "games" in name or "gp" in name:
+                    games = int(v)
+
+        if games is None or games <= 0:
+            games = 1
+
+        if pf_pg is None and points_for is not None:
+            pf_pg = points_for / games
+        if pa_pg is None and points_against is not None:
+            pa_pg = points_against / games
+
+    # 3) último intento: nombres genéricos con "score"
+    if pf_pg is None or pa_pg is None:
+        score_for = None
+        score_against = None
+        games = obj.get("Games", 1) or 1
+
+        for k, v in obj.items():
+            if not isinstance(v, (int, float)):
+                continue
+            name = k.lower()
+            if ("score" in name or "points" in name) and "opp" not in name and "against" not in name:
+                score_for = float(v)
+            if ("opp" in name or "against" in name) and ("score" in name or "points" in name):
+                score_against = float(v)
+
+        if pf_pg is None and score_for is not None:
+            pf_pg = score_for / games
+        if pa_pg is None and score_against is not None:
+            pa_pg = score_against / games
+
+    # 4) si aun así no hay nada, regresa 0 pero nunca None
+    if pf_pg is None:
+        pf_pg = 0.0
+    if pa_pg is None:
+        pa_pg = 0.0
+
+    return round(pf_pg, 2), round(pa_pg, 2)
 
 # =========================================================
 # FUNCIONES DE CARGA DESDE API (ODDS: TeamSeasonStats)
@@ -56,24 +128,13 @@ def cargar_nfl_desde_api(api_key: str):
     nfl_teams = {}
 
     for t in data:
-        # puntos por juego: usa directamente *_PerGame si existe
-        pf_pg = t.get("PointsForPerGame")
-        pa_pg = t.get("PointsAgainstPerGame")
-
-        if pf_pg is None or pa_pg is None:
-            pf = t.get("PointsFor", 0.0) or 0.0
-            pa = t.get("PointsAgainst", 0.0) or 0.0
-            games = t.get("Games", 0) or 0
-            games_played = games if games > 0 else 1
-            pf_pg = pf / games_played
-            pa_pg = pa / games_played
-
+        pf_pg, pa_pg = _get_nfl_points_pg(t)
         stats = {
-            "pf_pg": round(pf_pg, 2),
-            "pa_pg": round(pa_pg, 2),
+            "pf_pg": pf_pg,
+            "pa_pg": pa_pg,
         }
 
-        # 🔥 cualquier valor string del objeto se vuelve llave
+        # cualquier string del objeto será llave
         for v in t.values():
             if isinstance(v, str):
                 s = v.lower()
@@ -89,7 +150,6 @@ def cargar_nfl_desde_api(api_key: str):
 def cargar_nba_desde_api(api_key: str):
     """
     NBA Team Season Stats (ODDS, 2025REG fijo)
-    Indexa TODOS los campos de texto como posibles llaves de búsqueda.
     """
     url = f"{NBA_TEAMSEASON_URL}?key={api_key}"
 
