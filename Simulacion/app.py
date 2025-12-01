@@ -25,11 +25,11 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Temporadas que quieres usar (solo para mostrar en textos)
+# Labels de temporada para mostrar
 NBA_SEASON_LABEL = "2025REG"
 NFL_SEASON_LABEL = "2025REG"
 
-# Endpoints EXACTOS de la doc (con 2025REG ya en la URL)
+# Endpoints EXACTOS (2025REG fijo en la URL)
 NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
 NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
 
@@ -41,7 +41,7 @@ NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStat
 def cargar_nfl_desde_api(api_key: str):
     """
     NFL Team Season Stats (ODDS, 2025REG fijo)
-    https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG
+    Indexa TODOS los campos de texto como posibles llaves de búsqueda.
     """
     url = f"{NFL_TEAMSEASON_URL}?key={api_key}"
 
@@ -56,11 +56,7 @@ def cargar_nfl_desde_api(api_key: str):
     nfl_teams = {}
 
     for t in data:
-        full = (t.get("FullName") or "").lower()   # "dallas cowboys"
-        name = (t.get("Name") or "").lower()       # "cowboys"
-        abbr = (t.get("Team") or "").lower()       # "dal"
-        key  = (t.get("Key") or "").lower()
-
+        # puntos por juego: usa directamente *_PerGame si existe
         pf_pg = t.get("PointsForPerGame")
         pa_pg = t.get("PointsAgainstPerGame")
 
@@ -77,18 +73,14 @@ def cargar_nfl_desde_api(api_key: str):
             "pa_pg": round(pa_pg, 2),
         }
 
-        posibles_llaves = {
-            full,
-            name,
-            abbr,
-            key,
-            full.replace(" ", "") if full else "",
-            name.replace(" ", "") if name else "",
-        }
-
-        for k in posibles_llaves:
-            if k:
-                nfl_teams[k] = stats
+        # 🔥 cualquier valor string del objeto se vuelve llave
+        for v in t.values():
+            if isinstance(v, str):
+                s = v.lower()
+                keys = {s, s.replace(" ", "")}
+                for k in keys:
+                    if k:
+                        nfl_teams[k] = stats
 
     return nfl_teams, ""
 
@@ -97,7 +89,7 @@ def cargar_nfl_desde_api(api_key: str):
 def cargar_nba_desde_api(api_key: str):
     """
     NBA Team Season Stats (ODDS, 2025REG fijo)
-    https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG
+    Indexa TODOS los campos de texto como posibles llaves de búsqueda.
     """
     url = f"{NBA_TEAMSEASON_URL}?key={api_key}"
 
@@ -112,10 +104,6 @@ def cargar_nba_desde_api(api_key: str):
     nba_teams = {}
 
     for t in data:
-        full = (t.get("FullName") or "").lower()
-        name = (t.get("Name") or "").lower()
-        abbr = (t.get("Team") or "").lower()
-
         pf = t.get("PointsPerGame", 0.0) or 0.0
         pa = t.get("OppPointsPerGame", 0.0) or 0.0
         pace = t.get("PossessionsPerGame", 0.0) or 0.0
@@ -126,17 +114,13 @@ def cargar_nba_desde_api(api_key: str):
             "pace": round(pace, 2),
         }
 
-        posibles_llaves = {
-            full,
-            name,
-            abbr,
-            full.replace(" ", "") if full else "",
-            name.replace(" ", "") if name else "",
-        }
-
-        for k in posibles_llaves:
-            if k:
-                nba_teams[k] = stats
+        for v in t.values():
+            if isinstance(v, str):
+                s = v.lower()
+                keys = {s, s.replace(" ", "")}
+                for k in keys:
+                    if k:
+                        nba_teams[k] = stats
 
     return nba_teams, ""
 
@@ -152,14 +136,14 @@ if liga == "NFL":
     if nfl_error:
         st.warning(f"⚠️ {nfl_error}")
     else:
-        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON_LABEL})")
+        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} registros indexados ({NFL_SEASON_LABEL})")
 
 elif liga == "NBA":
     nba_data, nba_error = cargar_nba_desde_api(API_NBA_KEY)
     if nba_error:
         st.warning(f"⚠️ {nba_error}")
     else:
-        st.success(f"✅ Datos NBA cargados — {len(nba_data)} equipos ({NBA_SEASON_LABEL})")
+        st.success(f"✅ Datos NBA cargados — {len(nba_data)} registros indexados ({NBA_SEASON_LABEL})")
 
 else:  # NHL
     st.info("🏒 NHL: no hay carga automática, llena los campos manualmente.")
