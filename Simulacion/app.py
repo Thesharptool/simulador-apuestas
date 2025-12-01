@@ -22,8 +22,8 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # =========================================================
 
 # 👇 AQUÍ VAN TUS KEYS REALES
-API_NBA_KEY = "2fb2271ae32f415d970aebbab19254fe"   # Discovery Lab NBA Fantasy
-API_NFL_KEY = "9c2d0016c9a74ba9b730b70bca6bc6b5"   # Discovery Lab NFL Fantasy
+API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Fantasy
+API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Fantasy
 
 # Endpoints base que salen en tu documentación
 BASE_NBA_FANTASY = "https://api.sportsdata.io/api/nba/fantasy/json"
@@ -636,3 +636,4 @@ else:
     )
 
 st.caption("Pon los moneylines para calcular el edge de forma más fina.")
+
