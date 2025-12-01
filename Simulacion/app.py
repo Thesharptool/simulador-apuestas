@@ -18,32 +18,34 @@ st.markdown(
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=True)
 
 # =========================================================
-# KEYS Y SEASON (SportsDataIO Fantasy)
+# KEYS Y SEASON (SportsDataIO Core/Odds)
 # =========================================================
 
-# 👇 AQUÍ VAN TUS KEYS REALES
-API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Fantasy
-API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Fantasy
+# 👇 AQUÍ VAN TUS KEYS REALES (ODDS / CORE)
+API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
+API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Endpoints base que salen en tu documentación
-BASE_NBA_FANTASY = "https://api.sportsdata.io/api/nba/fantasy/json"
-BASE_NFL_FANTASY = "https://api.sportsdata.io/api/nfl/fantasy/json"
+# Endpoints base de CORE (scores), que vienen con tu plan Core+Odds
+# Antes usábamos /fantasy/json, ahora usamos /scores/json
+BASE_NBA = "https://api.sportsdata.io/api/nba/scores/json"
+BASE_NFL = "https://api.sportsdata.io/api/nfl/scores/json"
 
-# Season: en Fantasy usan año (ej: 2015, 2016…)
+# Season: usan año (ej: 2015, 2016…)
 NBA_SEASON = "2025"
 NFL_SEASON = "2025"
 
 # =========================================================
-# FUNCIONES DE CARGA DESDE API (FANTASY)
+# FUNCIONES DE CARGA DESDE API (CORE/ODDS)
 # =========================================================
 
 @st.cache_data(ttl=600)
 def cargar_nfl_desde_api(api_key: str, season: str):
     """
-    Standings NFL Fantasy -> puntos a favor / en contra por juego.
-    https://api.sportsdata.io/api/nfl/fantasy/json/Standings/{season}
+    Standings NFL (Core) -> puntos a favor / en contra por juego.
+    Endpoint típico:
+      https://api.sportsdata.io/api/nfl/scores/json/Standings/{season}?key=...
     """
-    url = f"{BASE_NFL_FANTASY}/Standings/{season}?key={api_key}"
+    url = f"{BASE_NFL}/Standings/{season}?key={api_key}"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
@@ -74,10 +76,11 @@ def cargar_nfl_desde_api(api_key: str, season: str):
 @st.cache_data(ttl=600)
 def cargar_nba_desde_api(api_key: str, season: str):
     """
-    Standings NBA Fantasy -> puntos a favor / en contra por juego.
-    https://api.sportsdata.io/api/nba/fantasy/json/Standings/{season}
+    Standings NBA (Core) -> puntos a favor / en contra por juego.
+    Endpoint típico:
+      https://api.sportsdata.io/api/nba/scores/json/Standings/{season}?key=...
     """
-    url = f"{BASE_NBA_FANTASY}/Standings/{season}?key={api_key}"
+    url = f"{BASE_NBA}/Standings/{season}?key={api_key}"
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
@@ -235,7 +238,7 @@ elif liga == "NBA":
     st.subheader("2) Factores avanzados NBA (últimos 5 partidos) 🏀")
     st.caption(
         "Llena estos datos para que el total de NBA se acerque más a las líneas reales. "
-        "Por ahora, estos se llenan manualmente (tu plan no incluye TeamGameStats de Odds)."
+        "Por ahora, estos se llenan manualmente."
     )
     nb1, nb2 = st.columns(2)
 
@@ -372,7 +375,7 @@ if liga == "NFL":
 
 elif liga == "NBA":
     # pace medio de los 2, si no hay usa liga
-    if pace_local_5 > 0 and pace_visita_5 > 0:
+    if 'pace_local_5' in locals() and pace_local_5 > 0 and pace_visita_5 > 0:
         pace_med = (pace_local_5 + pace_visita_5) / 2
     else:
         pace_med = pace_liga
@@ -636,4 +639,3 @@ else:
     )
 
 st.caption("Pon los moneylines para calcular el edge de forma más fina.")
-
