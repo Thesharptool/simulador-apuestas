@@ -35,28 +35,29 @@ NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStat
 # HELPERS PARA ENCONTRAR CAMPOS DE PUNTOS (NFL)
 # =========================================================
 
-def _get_nfl_points_pg(obj: dict):
+def get_nfl_points_pg_v2(obj: dict):
     """
-    A partir de TeamSeasonStats (ODDS) calcula puntos a favor / en contra por juego
-    usando los campos que vimos en tu JSON:
-      - Score
-      - OpponentScore
-      - TotalScore
-      - Wins / Losses / Ties
-      - (opcionalmente) PointsFor / PointsAgainst / Games si existen
+    Usa exactamente los campos que se ven en tu JSON de TeamSeasonStats (ODDS):
+
+      - Score           -> puntos a favor en toda la temporada
+      - OpponentScore   -> puntos en contra en toda la temporada
+      - TotalScore      -> Score + OpponentScore
+      - Wins / Losses / Ties -> número de partidos
+
+    Si existieran PointsFor / PointsAgainst / Games también los usa.
     """
 
     # ----- Totales de puntos -----
     score = obj.get("PointsFor")
     opp_score = obj.get("PointsAgainst")
 
-    # Si no existen esos, usamos Score / OpponentScore que sí vimos en tu captura
+    # Si no existen esos, usamos Score / OpponentScore que sí vimos en la captura
     if score is None:
         score = obj.get("Score")
     if opp_score is None:
         opp_score = obj.get("OpponentScore")
 
-    # Si solo viene TotalScore + uno de los dos, calculamos el otro
+    # Por si acaso, calculamos a partir de TotalScore si falta uno de los dos
     total_score = obj.get("TotalScore")
     if score is None and total_score is not None and opp_score is not None:
         score = total_score - opp_score
@@ -78,7 +79,7 @@ def _get_nfl_points_pg(obj: dict):
     if games is None or games == 0:
         games = wins + losses + ties
     if games == 0:
-        games = 1  # por si acaso
+        games = 1  # para evitar división entre 0
 
     # ----- Puntos por juego -----
     pf_pg = score / games
@@ -94,7 +95,8 @@ def _get_nfl_points_pg(obj: dict):
 def cargar_nfl_desde_api(api_key: str):
     """
     NFL Team Season Stats (ODDS, 2025REG fijo)
-    Indexa TODOS los campos de texto como posibles llaves de búsqueda.
+    Indexa TODOS los campos de texto como posibles llaves de búsqueda
+    y usa get_nfl_points_pg_v2 para calcular PF/PA por juego.
     """
     url = f"{NFL_TEAMSEASON_URL}?key={api_key}"
 
@@ -109,7 +111,7 @@ def cargar_nfl_desde_api(api_key: str):
     nfl_teams = {}
 
     for t in data:
-        pf_pg, pa_pg = _get_nfl_points_pg(t)
+        pf_pg, pa_pg = get_nfl_points_pg_v2(t)
         stats = {
             "pf_pg": pf_pg,
             "pa_pg": pa_pg,
@@ -211,6 +213,8 @@ with col_l:
                     st.session_state["l_permite_global"] = nfl_data[key_try]["pa_pg"]
                     st.success(f"LOCAL rellenado con datos reales de {local_name}")
                     encontrado = True
+                    # DEBUG opcional: ver qué trae la API
+                    st.caption(f"PF/PG={nfl_data[key_try]['pf_pg']}  PA/PG={nfl_data[key_try]['pa_pg']}")
                     break
             if not encontrado:
                 st.error("No encontré ese equipo en NFL")
@@ -261,6 +265,7 @@ with col_v:
                     st.session_state["v_permite_global"] = nfl_data[key_try]["pa_pg"]
                     st.success(f"VISITA rellenado con datos reales de {visita_name}")
                     encontrado = True
+                    st.caption(f"PF/PG={nfl_data[key_try]['pf_pg']}  PA/PG={nfl_data[key_try]['pa_pg']}")
                     break
             if not encontrado:
                 st.error("No encontré ese equipo en NFL")
