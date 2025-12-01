@@ -18,37 +18,37 @@ st.markdown(
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=True)
 
 # =========================================================
-# KEYS Y SEASON (SportsDataIO ODDS)
+# KEYS, SEASON Y ENDPOINTS (SportsDataIO ODDS)
 # =========================================================
 
 # 👇 TUS KEYS REALES (ODDS)
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # Discovery Lab NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # Discovery Lab NFL Odds Season Pass
 
-# Endpoints base ODDS
-BASE_NBA = "https://api.sportsdata.io/api/nba/odds/json"
-BASE_NFL = "https://api.sportsdata.io/api/nfl/odds/json"
+# Temporadas que quieres usar (solo para mostrar en textos)
+NBA_SEASON_LABEL = "2025REG"
+NFL_SEASON_LABEL = "2025REG"
 
-# Season (ODDS) – formato tipo 2025REG, 2025PRE, 2025POST
-NBA_SEASON = "2025REG"
-NFL_SEASON = "2025REG"
+# Endpoints EXACTOS de la doc (con 2025REG ya en la URL)
+NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
+NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
 
 # =========================================================
 # FUNCIONES DE CARGA DESDE API (ODDS: TeamSeasonStats)
 # =========================================================
 
 @st.cache_data(ttl=600)
-def cargar_nfl_desde_api(api_key: str, season: str):
+def cargar_nfl_desde_api(api_key: str):
     """
-    NFL Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
-    https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/{season}
+    NFL Team Season Stats (ODDS, 2025REG fijo)
+    https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG
     """
-    url = f"{BASE_NFL}/TeamSeasonStats/{season}?key={api_key}"
+    url = f"{NFL_TEAMSEASON_URL}?key={api_key}"
 
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NFL TeamSeasonStats)"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NFL TeamSeasonStats 2025REG)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NFL: {e}"
@@ -56,13 +56,11 @@ def cargar_nfl_desde_api(api_key: str, season: str):
     nfl_teams = {}
 
     for t in data:
-        # Varias formas de nombrar al equipo
-        full = (t.get("FullName") or "").lower()      # ej. "dallas cowboys"
-        name = (t.get("Name") or "").lower()          # ej. "cowboys"
-        abbr = (t.get("Team") or "").lower()          # ej. "dal"
-        key  = (t.get("Key") or "").lower()           # muchas veces igual que Team
+        full = (t.get("FullName") or "").lower()   # "dallas cowboys"
+        name = (t.get("Name") or "").lower()       # "cowboys"
+        abbr = (t.get("Team") or "").lower()       # "dal"
+        key  = (t.get("Key") or "").lower()
 
-        # Puntos
         pf_pg = t.get("PointsForPerGame")
         pa_pg = t.get("PointsAgainstPerGame")
 
@@ -79,7 +77,6 @@ def cargar_nfl_desde_api(api_key: str, season: str):
             "pa_pg": round(pa_pg, 2),
         }
 
-        # Guardamos varias llaves que apuntan al mismo dict
         posibles_llaves = {
             full,
             name,
@@ -97,17 +94,17 @@ def cargar_nfl_desde_api(api_key: str, season: str):
 
 
 @st.cache_data(ttl=600)
-def cargar_nba_desde_api(api_key: str, season: str):
+def cargar_nba_desde_api(api_key: str):
     """
-    NBA Team Season Stats (ODDS) -> puntos a favor / en contra por juego.
-    https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/{season}
+    NBA Team Season Stats (ODDS, 2025REG fijo)
+    https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG
     """
-    url = f"{BASE_NBA}/TeamSeasonStats/{season}?key={api_key}"
+    url = f"{NBA_TEAMSEASON_URL}?key={api_key}"
 
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA TeamSeasonStats)"
+            return {}, f"Error {resp.status_code} al conectar con SportsDataIO (NBA TeamSeasonStats 2025REG)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NBA: {e}"
@@ -151,18 +148,18 @@ nfl_data = {}
 nba_data = {}
 
 if liga == "NFL":
-    nfl_data, nfl_error = cargar_nfl_desde_api(API_NFL_KEY, NFL_SEASON)
+    nfl_data, nfl_error = cargar_nfl_desde_api(API_NFL_KEY)
     if nfl_error:
         st.warning(f"⚠️ {nfl_error}")
     else:
-        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON})")
+        st.success(f"✅ Datos NFL cargados — {len(nfl_data)} equipos ({NFL_SEASON_LABEL})")
 
 elif liga == "NBA":
-    nba_data, nba_error = cargar_nba_desde_api(API_NBA_KEY, NBA_SEASON)
+    nba_data, nba_error = cargar_nba_desde_api(API_NBA_KEY)
     if nba_error:
         st.warning(f"⚠️ {nba_error}")
     else:
-        st.success(f"✅ Datos NBA cargados — {len(nba_data)} equipos ({NBA_SEASON})")
+        st.success(f"✅ Datos NBA cargados — {len(nba_data)} equipos ({NBA_SEASON_LABEL})")
 
 else:  # NHL
     st.info("🏒 NHL: no hay carga automática, llena los campos manualmente.")
@@ -179,12 +176,9 @@ with col_l:
 
     if liga == "NFL":
         if st.button("Rellenar LOCAL desde NFL"):
-            lookup = local_name.strip().lower().replace(" ", "")
-            # probamos con y sin espacios
-            candidatos = {
-                lookup,
-                local_name.strip().lower(),
-            }
+            lookup_raw = local_name.strip().lower()
+            lookup_no_space = lookup_raw.replace(" ", "")
+            candidatos = {lookup_raw, lookup_no_space}
             encontrado = False
             for key_try in candidatos:
                 if key_try in nfl_data:
@@ -198,11 +192,9 @@ with col_l:
 
     if liga == "NBA":
         if st.button("Rellenar LOCAL desde NBA"):
-            lookup = local_name.strip().lower().replace(" ", "")
-            candidatos = {
-                lookup,
-                local_name.strip().lower(),
-            }
+            lookup_raw = local_name.strip().lower()
+            lookup_no_space = lookup_raw.replace(" ", "")
+            candidatos = {lookup_raw, lookup_no_space}
             encontrado = False
             for key_try in candidatos:
                 if key_try in nba_data:
@@ -234,11 +226,9 @@ with col_v:
 
     if liga == "NFL":
         if st.button("Rellenar VISITA desde NFL"):
-            lookup = visita_name.strip().lower().replace(" ", "")
-            candidatos = {
-                lookup,
-                visita_name.strip().lower(),
-            }
+            lookup_raw = visita_name.strip().lower()
+            lookup_no_space = lookup_raw.replace(" ", "")
+            candidatos = {lookup_raw, lookup_no_space}
             encontrado = False
             for key_try in candidatos:
                 if key_try in nfl_data:
@@ -252,11 +242,9 @@ with col_v:
 
     if liga == "NBA":
         if st.button("Rellenar VISITA desde NBA"):
-            lookup = visita_name.strip().lower().replace(" ", "")
-            candidatos = {
-                lookup,
-                visita_name.strip().lower(),
-            }
+            lookup_raw = visita_name.strip().lower()
+            lookup_no_space = lookup_raw.replace(" ", "")
+            candidatos = {lookup_raw, lookup_no_space}
             encontrado = False
             for key_try in candidatos:
                 if key_try in nba_data:
@@ -412,12 +400,11 @@ def proyeccion_nfl(ofensiva, defensa, es_local=False):
 st.subheader("4) Proyección del modelo")
 
 if liga == "NFL":
-    # GLOBAL
     pts_local_global = proyeccion_nfl(l_anota_global, v_permite_global, True) * mult_local
     pts_visita_global = proyeccion_nfl(v_anota_global, l_permite_global, False) * mult_visita
     total_global = pts_local_global + pts_visita_global
-    spread_global = pts_local_global - pts_visita_global  # margen local – visita
-    line_modelo = -spread_global  # formato casa (LOCAL favorito = negativo)
+    spread_global = pts_local_global - pts_visita_global
+    line_modelo = -spread_global
 
     st.markdown("🟦 **GLOBAL**")
     st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
@@ -428,7 +415,6 @@ if liga == "NFL":
         f"→ línea modelo LOCAL **{line_modelo:+.1f}**"
     )
 
-    # CASA / VISITA si hay
     if hay_cv:
         st.markdown("🟩 **CASA / VISITA**")
         pts_local_cv = proyeccion_nfl(l_anota_casa, v_permite_visita, True) * mult_local
@@ -445,17 +431,14 @@ if liga == "NFL":
         spread_cv = None
 
 elif liga == "NBA":
-    # pace medio de los 2, si no hay usa liga
     if 'pace_local_5' in locals() and pace_local_5 > 0 and pace_visita_5 > 0:
         pace_med = (pace_local_5 + pace_visita_5) / 2
     else:
         pace_med = pace_liga
 
-    # reciente LOCAL y VISITA -> 60% ataque + 40% defensa rival
     reciente_local = (0.6 * off_local_5 + 0.4 * def_visita_5) * (pace_med / 100.0)
     reciente_visita = (0.6 * off_visita_5 + 0.4 * def_local_5) * (pace_med / 100.0)
 
-    # global: promedio simple vs rival
     global_local_part = 0.0
     global_visita_part = 0.0
     if l_anota_global or v_permite_global:
@@ -463,13 +446,12 @@ elif liga == "NBA":
     if v_anota_global or l_permite_global:
         global_visita_part = (v_anota_global + l_permite_global) / 2.0
 
-    # mezcla 65% reciente, 35% global
     pts_local_global = (0.65 * reciente_local + 0.35 * global_local_part) * mult_local
     pts_visita_global = (0.65 * reciente_visita + 0.35 * global_visita_part) * mult_visita
 
     total_global = pts_local_global + pts_visita_global
-    spread_global = pts_local_global - pts_visita_global  # margen local – visita
-    line_modelo = -spread_global  # formato casa
+    spread_global = pts_local_global - pts_visita_global
+    line_modelo = -spread_global
 
     st.markdown("🏀 usando últimos 5 + pace + global (65% / 35%)")
     st.write(f"- {local_name or 'LOCAL'}: **{pts_local_global:.1f} pts**")
@@ -484,8 +466,7 @@ elif liga == "NBA":
     spread_cv = None
 
 else:  # NHL
-    # índice de ataque / defensa alrededor del promedio liga
-    base_team = goles_liga / 2.0  # goles promedio por equipo
+    base_team = goles_liga / 2.0
 
     atk_local = 0.5 * gf_local_5 + 0.3 * xgf_local_5 + 0.2 * (corsi_local_5 - 50) / 5
     def_visita = 0.5 * ga_visita_5 + 0.3 * xga_visita_5 - 0.2 * (sv_goalie_visita_5 - 0.910) * 10
@@ -493,7 +474,6 @@ else:  # NHL
     atk_visita = 0.5 * gf_visita_5 + 0.3 * xgf_visita_5 + 0.2 * (corsi_visita_5 - 50) / 5
     def_local = 0.5 * ga_local_5 + 0.3 * xga_local_5 - 0.2 * (sv_goalie_local_5 - 0.910) * 10
 
-    # Proyección de goles esperados
     exp_local = base_team + 0.5 * (atk_local - base_team) - 0.5 * (def_visita - base_team)
     exp_visita = base_team + 0.5 * (atk_visita - base_team) - 0.5 * (def_local - base_team)
 
@@ -587,7 +567,7 @@ st.write(
 # 5c) Comparativa de probabilidades (modelo vs casino)
 # =========================================================
 st.subheader("5c) Comparativa de probabilidades (modelo vs casino)")
-p_local_modelo = 50 + (spread_global * 2)  # simple
+p_local_modelo = 50 + (spread_global * 2)
 p_local_modelo = max(1, min(99, p_local_modelo))
 p_visita_modelo = 100 - p_local_modelo
 
