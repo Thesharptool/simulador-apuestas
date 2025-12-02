@@ -32,7 +32,7 @@ NBA_SEASON_LABEL = "2025REG"
 NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
 NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
 
-# Odds por semana (ODDS) – TAL CUAL TU CAPTURA
+# Odds por semana (ODDS)
 # https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek/2025REG/13?key=XXXX
 NFL_GAMEODDS_WEEK_BASE = "https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek"
 
@@ -196,8 +196,9 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
                            team_local: str, team_visita: str):
     """
     Busca en GameOddsByWeek/{season}/{week} el partido con esas dos franquicias.
-    Devuelve spread, total, ML local, ML visita.
-    Ahora es más flexible con los nombres/códigos de equipo.
+    Devuelve spread (formato LOCAL de la app), total, ML local y ML visita.
+
+    Usa HomePointSpread / AwayPointSpread del endpoint de odds.
     """
     data, err = cargar_odds_semana_nfl(api_key, season_label, week)
     if err:
@@ -229,14 +230,12 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
         if not home_norm or not away_norm:
             continue
 
-        # ¿Este juego contiene al equipo local que pusiste?
+        # ¿Este juego contiene al equipo local y al visitante que pusiste?
         juego_tiene_local = any(c and c in {home_norm, away_norm} for c in cand_local)
-        # ¿Y también contiene al visitante?
         juego_tiene_visita = any(c and c in {home_norm, away_norm} for c in cand_visita)
 
         if not (juego_tiene_local and juego_tiene_visita):
             continue
-
         if home_norm == away_norm:
             continue  # algo raro
 
@@ -247,7 +246,11 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
 
         o = odds_list[0]  # primer proveedor
 
-        spread = o.get("PointSpread")
+        # 👇 spread del home según el endpoint (HomePointSpread)
+        spread_home = o.get("HomePointSpread")
+        if spread_home is None:
+            spread_home = o.get("PointSpread")  # por si acaso
+
         total = o.get("OverUnder")
 
         ml_home = o.get("HomeMoneyLine") or o.get("HomeTeamMoneyLine")
@@ -258,12 +261,12 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
             # El home de la API es tu LOCAL
             ml_local = ml_home
             ml_visita = ml_away
-            spread_local = spread
+            spread_local = spread_home
         else:
-            # El home de la API es tu VISITA
+            # El home de la API es tu VISITA → invertimos el spread
             ml_local = ml_away
             ml_visita = ml_home
-            spread_local = -spread if spread is not None else 0.0
+            spread_local = -spread_home if spread_home is not None else 0.0
 
         return {
             "spread": float(spread_local or 0.0),
