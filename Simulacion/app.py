@@ -22,8 +22,8 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # =========================================================
 
 # 👇 KEYS
-API_NBA_SCORES_KEY = "0d1d5d0c77a74544b94b4284cd4b29da"        # <<--- pega aquí tu key nueva de v3 NBA scores
-API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # NFL Odds Season Pass (la que ya usas)
+API_NBA_SCORES_KEY = "0d1d5d0c77a74544b94b4284cd4b29da"          # <<--- pega aquí tu key v3 NBA scores
+API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"  # NFL Odds Season Pass
 
 NFL_SEASON_LABEL = "2025REG"
 NBA_SEASON_YEAR = "2025"
@@ -34,7 +34,7 @@ NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStat
 # NFL Odds por semana (ODDS)
 NFL_GAMEODDS_WEEK_BASE = "https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek"
 
-# NBA Standings (SCORES v3 – NUEVO ENDPOINT)
+# NBA Standings (SCORES v3)
 NBA_STANDINGS_URL = "https://api.sportsdata.io/v3/nba/scores/json/Standings/2025"
 
 # =========================================================
@@ -140,7 +140,10 @@ def cargar_nfl_desde_api(api_key: str):
 def cargar_nba_desde_api(api_key: str):
     """
     NBA Standings (v3 scores, 2025).
-    Usa PointsPerGame y OppPointsPerGame / OpponentPointsPerGame.
+
+    Aquí usamos exactamente los campos:
+      - PointsPerGameFor      -> puntos que ANOTA el equipo por juego
+      - PointsPerGameAgainst  -> puntos que PERMITE el equipo por juego
     """
     url = f"{NBA_STANDINGS_URL}?key={api_key}"
 
@@ -155,20 +158,27 @@ def cargar_nba_desde_api(api_key: str):
     nba_teams = {}
 
     for t in data:
-        # diferentes versiones usan OppPointsPerGame u OpponentPointsPerGame
-        pf = t.get("PointsPerGame", 0.0) or 0.0
+        # Campos del endpoint Standings
+        pf = (
+            t.get("PointsPerGameFor")
+            or t.get("PointsPerGameFOR")
+            or t.get("PointsPerGameFor".lower())
+            or 0.0
+        )
         pa = (
-            t.get("OppPointsPerGame")
-            or t.get("OpponentPointsPerGame")
+            t.get("PointsPerGameAgainst")
+            or t.get("PointsPerGameAGAINST")
+            or t.get("PointsPerGameAgainst".lower())
             or 0.0
         )
 
         stats = {
             "pf_pg": round(float(pf), 2),
             "pa_pg": round(float(pa), 2),
-            "pace": 0.0,  # standings normalmente no traen pace; lo sigues llenando a mano
+            "pace": 0.0,  # este endpoint no trae pace: lo sigues llenando a mano
         }
 
+        # Indexamos muchas posibles llaves: City, Name, Key, etc.
         for v in t.values():
             if isinstance(v, str):
                 s = v.lower()
