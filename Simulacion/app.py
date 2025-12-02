@@ -18,23 +18,24 @@ st.markdown(
 liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=True)
 
 # =========================================================
-# KEYS, SEASON Y ENDPOINTS (SportsDataIO ODDS)
+# KEYS, SEASON Y ENDPOINTS
 # =========================================================
 
-# 👇 TUS KEYS (ODDS)
-API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # NBA Odds Season Pass
-API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # NFL Odds Season Pass
+# 👇 KEYS
+API_NBA_SCORES_KEY = "0d1d5d0c77a74544b94b4284cd4b29da"        # <<--- pega aquí tu key nueva de v3 NBA scores
+API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # NFL Odds Season Pass (la que ya usas)
 
 NFL_SEASON_LABEL = "2025REG"
-NBA_SEASON_LABEL = "2025REG"
+NBA_SEASON_YEAR = "2025"
 
-# Team stats (ODDS)
+# NFL Team stats (ODDS)
 NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
-NBA_TEAMSEASON_URL = "https://api.sportsdata.io/api/nba/odds/json/TeamSeasonStats/2025REG"
 
-# Odds por semana (ODDS)
-# https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek/2025REG/13?key=XXXX
+# NFL Odds por semana (ODDS)
 NFL_GAMEODDS_WEEK_BASE = "https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek"
+
+# NBA Standings (SCORES v3 – NUEVO ENDPOINT)
+NBA_STANDINGS_URL = "https://api.sportsdata.io/v3/nba/scores/json/Standings/2025"
 
 # =========================================================
 # HELPERS GENERALES
@@ -54,15 +55,13 @@ def get_nfl_points_pg_v2(obj: dict):
     """
     Usa los campos que aparecen en TeamSeasonStats (ODDS):
 
-      - Score           -> puntos a favor total
-      - OpponentScore   -> puntos en contra total
-      - TotalScore      -> Score + OpponentScore
+      - Score / PointsFor       -> puntos a favor total
+      - OpponentScore / PointsAgainst -> puntos en contra total
       - Wins / Losses / Ties o Games -> número de partidos
     """
     score = obj.get("PointsFor")
     opp_score = obj.get("PointsAgainst")
 
-    # Si no existen, usamos Score / OpponentScore (que sí ves en la captura)
     if score is None:
         score = obj.get("Score")
     if opp_score is None:
@@ -94,7 +93,7 @@ def get_nfl_points_pg_v2(obj: dict):
     return round(pf_pg, 2), round(pa_pg, 2)
 
 # =========================================================
-# CARGA DESDE API (ODDS: TeamSeasonStats)
+# CARGA DESDE API NFL (ODDS: TeamSeasonStats)
 # =========================================================
 
 @st.cache_data(ttl=600)
@@ -133,18 +132,22 @@ def cargar_nfl_desde_api(api_key: str):
 
     return nfl_teams, ""
 
+# =========================================================
+# CARGA DESDE API NBA (SCORES v3: Standings)
+# =========================================================
+
 @st.cache_data(ttl=600)
 def cargar_nba_desde_api(api_key: str):
     """
-    NBA TeamSeasonStats (ODDS, 2025REG).
-    Usa campos típicos de odds: PointsPerGame, OppPointsPerGame, PossessionsPerGame.
+    NBA Standings (v3 scores, 2025).
+    Usa PointsPerGame y OppPointsPerGame / OpponentPointsPerGame.
     """
-    url = f"{NBA_TEAMSEASON_URL}?key={api_key}"
+    url = f"{NBA_STANDINGS_URL}?key={api_key}"
 
     try:
         resp = requests.get(url, timeout=10)
         if resp.status_code != 200:
-            return {}, f"Error {resp.status_code} al conectar con TeamSeasonStats NBA (ODDS)"
+            return {}, f"Error {resp.status_code} al conectar con NBA Standings (scores v3)"
         data = resp.json()
     except Exception as e:
         return {}, f"Error de conexión NBA: {e}"
@@ -152,14 +155,18 @@ def cargar_nba_desde_api(api_key: str):
     nba_teams = {}
 
     for t in data:
+        # diferentes versiones usan OppPointsPerGame u OpponentPointsPerGame
         pf = t.get("PointsPerGame", 0.0) or 0.0
-        pa = t.get("OppPointsPerGame", 0.0) or 0.0
-        pace = t.get("PossessionsPerGame", 0.0) or 0.0
+        pa = (
+            t.get("OppPointsPerGame")
+            or t.get("OpponentPointsPerGame")
+            or 0.0
+        )
 
         stats = {
-            "pf_pg": round(pf, 2),
-            "pa_pg": round(pa, 2),
-            "pace": round(pace, 2),
+            "pf_pg": round(float(pf), 2),
+            "pa_pg": round(float(pa), 2),
+            "pace": 0.0,  # standings normalmente no traen pace; lo sigues llenando a mano
         }
 
         for v in t.values():
@@ -179,7 +186,7 @@ def cargar_nba_desde_api(api_key: str):
 @st.cache_data(ttl=300)
 def cargar_odds_semana_nfl(api_key: str, season_label: str, week: int):
     """
-    Llama EXACTAMENTE al endpoint que mostraste:
+    Llama EXACTAMENTE al endpoint:
     https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek/2025REG/13
     """
     url = f"{NFL_GAMEODDS_WEEK_BASE}/{season_label}/{week}?key={api_key}"
@@ -197,7 +204,6 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
     """
     Busca en GameOddsByWeek/{season}/{week} el partido con esas dos franquicias.
     Devuelve spread (formato LOCAL de la app), total, ML local y ML visita.
-
     Usa HomePointSpread / AwayPointSpread del endpoint de odds.
     """
     data, err = cargar_odds_semana_nfl(api_key, season_label, week)
@@ -206,7 +212,6 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
     if not data:
         return {}, "No se encontraron juegos para esa semana."
 
-    # Normalizamos lo que tú escribes en la app
     code_local = normalize_team_code(team_local)
     code_visita = normalize_team_code(team_visita)
 
@@ -220,7 +225,6 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
         return normalize_team_code(s or "")
 
     for g in data:
-        # Posibles campos de equipo en el JSON
         raw_home = g.get("HomeTeam") or g.get("HomeTeamName") or g.get("HomeTeamKey") or ""
         raw_away = g.get("AwayTeam") or g.get("AwayTeamName") or g.get("AwayTeamKey") or ""
 
@@ -230,40 +234,34 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
         if not home_norm or not away_norm:
             continue
 
-        # ¿Este juego contiene al equipo local y al visitante que pusiste?
         juego_tiene_local = any(c and c in {home_norm, away_norm} for c in cand_local)
         juego_tiene_visita = any(c and c in {home_norm, away_norm} for c in cand_visita)
 
         if not (juego_tiene_local and juego_tiene_visita):
             continue
         if home_norm == away_norm:
-            continue  # algo raro
+            continue
 
-        # Sacamos los odds
         odds_list = g.get("PregameOdds") or g.get("GameOdds") or []
         if not odds_list:
             return {}, "No encontré bloque PregameOdds para ese juego."
 
-        o = odds_list[0]  # primer proveedor
+        o = odds_list[0]
 
-        # 👇 spread del home según el endpoint (HomePointSpread)
         spread_home = o.get("HomePointSpread")
         if spread_home is None:
-            spread_home = o.get("PointSpread")  # por si acaso
+            spread_home = o.get("PointSpread")
 
         total = o.get("OverUnder")
 
         ml_home = o.get("HomeMoneyLine") or o.get("HomeTeamMoneyLine")
         ml_away = o.get("AwayMoneyLine") or o.get("AwayTeamMoneyLine")
 
-        # Ajustamos para que el LOCAL de la app sea consistente
         if home_norm in cand_local:
-            # El home de la API es tu LOCAL
             ml_local = ml_home
             ml_visita = ml_away
             spread_local = spread_home
         else:
-            # El home de la API es tu VISITA → invertimos el spread
             ml_local = ml_away
             ml_visita = ml_home
             spread_local = -spread_home if spread_home is not None else 0.0
@@ -292,11 +290,11 @@ if liga == "NFL":
         st.success(f"✅ Datos NFL cargados — {len(nfl_data)} registros indexados ({NFL_SEASON_LABEL})")
 
 elif liga == "NBA":
-    nba_data, nba_error = cargar_nba_desde_api(API_NBA_KEY)
+    nba_data, nba_error = cargar_nba_desde_api(API_NBA_SCORES_KEY)
     if nba_error:
         st.warning(f"⚠️ {nba_error}")
     else:
-        st.success(f"✅ Datos NBA cargados — {len(nba_data)} registros indexados ({NBA_SEASON_LABEL})")
+        st.success(f"✅ Datos NBA cargados — {len(nba_data)} registros indexados ({NBA_SEASON_YEAR})")
 
 else:  # NHL
     st.info("🏒 NHL: no hay carga automática, llena los campos manualmente.")
@@ -343,6 +341,10 @@ with col_l:
                     st.session_state["l_permite_global"] = nba_data[key_try]["pa_pg"]
                     st.success(f"LOCAL rellenado con datos reales de {local_name}")
                     encontrado = True
+                    st.caption(
+                        f"PF/PG={nba_data[key_try]['pf_pg']}  "
+                        f"PA/PG={nba_data[key_try]['pa_pg']}"
+                    )
                     break
             if not encontrado:
                 st.error("No encontré ese equipo en NBA")
@@ -397,6 +399,10 @@ with col_v:
                     st.session_state["v_permite_global"] = nba_data[key_try]["pa_pg"]
                     st.success(f"VISITA rellenado con datos reales de {visita_name}")
                     encontrado = True
+                    st.caption(
+                        f"PF/PG={nba_data[key_try]['pf_pg']}  "
+                        f"PA/PG={nba_data[key_try]['pa_pg']}"
+                    )
                     break
             if not encontrado:
                 st.error("No encontré ese equipo en NBA")
@@ -646,7 +652,6 @@ else:  # NHL
 # =========================================================
 st.subheader("5) Línea del casino y diferencias")
 
-# ---- Automatizar odds NFL ----
 if liga == "NFL":
     st.markdown("#### Automatizar odds NFL desde SportsDataIO")
     semana_nfl = st.number_input(
