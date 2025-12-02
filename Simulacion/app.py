@@ -21,7 +21,7 @@ liga = st.radio("¿Qué quieres simular?", ["NFL", "NBA", "NHL"], horizontal=Tru
 # KEYS, SEASON Y ENDPOINTS (SportsDataIO ODDS)
 # =========================================================
 
-# 👇 TUS KEYS (ODDS) – LAS QUE TE DIO SPORTSDataIO
+# 👇 TUS KEYS (ODDS)
 API_NBA_KEY = "ed3c82811ac248e28e782fd0e50f8ec2"   # NBA Odds Season Pass
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"   # NFL Odds Season Pass
 
@@ -59,7 +59,6 @@ def get_nfl_points_pg_v2(obj: dict):
       - TotalScore      -> Score + OpponentScore
       - Wins / Losses / Ties o Games -> número de partidos
     """
-    # Totales
     score = obj.get("PointsFor")
     opp_score = obj.get("PointsAgainst")
 
@@ -80,7 +79,6 @@ def get_nfl_points_pg_v2(obj: dict):
     if opp_score is None:
         opp_score = 0.0
 
-    # Partidos jugados
     wins = obj.get("Wins") or 0
     losses = obj.get("Losses") or 0
     ties = obj.get("Ties") or 0
@@ -199,6 +197,7 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
     """
     Busca en GameOddsByWeek/{season}/{week} el partido con esas dos franquicias.
     Devuelve spread, total, ML local, ML visita.
+    Ahora es más flexible con los nombres/códigos de equipo.
     """
     data, err = cargar_odds_semana_nfl(api_key, season_label, week)
     if err:
@@ -206,20 +205,42 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
     if not data:
         return {}, "No se encontraron juegos para esa semana."
 
+    # Normalizamos lo que tú escribes en la app
     code_local = normalize_team_code(team_local)
     code_visita = normalize_team_code(team_visita)
 
     if not code_local or not code_visita:
         return {}, "Escribe LOCAL y VISITA antes de traer los odds."
 
-    for g in data:
-        home = normalize_team_code(g.get("HomeTeam", ""))
-        away = normalize_team_code(g.get("AwayTeam", ""))
+    cand_local = {code_local, code_local.replace(" ", "")}
+    cand_visita = {code_visita, code_visita.replace(" ", "")}
 
-        # mismo par de equipos (sin importar quién es home/away)
-        if {home, away} != {code_local, code_visita}:
+    def norm(s: str) -> str:
+        return normalize_team_code(s or "")
+
+    for g in data:
+        # Posibles campos de equipo en el JSON
+        raw_home = g.get("HomeTeam") or g.get("HomeTeamName") or g.get("HomeTeamKey") or ""
+        raw_away = g.get("AwayTeam") or g.get("AwayTeamName") or g.get("AwayTeamKey") or ""
+
+        home_norm = norm(raw_home)
+        away_norm = norm(raw_away)
+
+        if not home_norm or not away_norm:
             continue
 
+        # ¿Este juego contiene al equipo local que pusiste?
+        juego_tiene_local = any(c and c in {home_norm, away_norm} for c in cand_local)
+        # ¿Y también contiene al visitante?
+        juego_tiene_visita = any(c and c in {home_norm, away_norm} for c in cand_visita)
+
+        if not (juego_tiene_local and juego_tiene_visita):
+            continue
+
+        if home_norm == away_norm:
+            continue  # algo raro
+
+        # Sacamos los odds
         odds_list = g.get("PregameOdds") or g.get("GameOdds") or []
         if not odds_list:
             return {}, "No encontré bloque PregameOdds para ese juego."
@@ -228,15 +249,18 @@ def traer_odds_partido_nfl(api_key: str, season_label: str, week: int,
 
         spread = o.get("PointSpread")
         total = o.get("OverUnder")
-        ml_home = o.get("HomeMoneyLine")
-        ml_away = o.get("AwayMoneyLine")
 
-        # Ajustamos para que el LOCAL del simulador sea el LOCAL de la UI
-        if home == code_local:
+        ml_home = o.get("HomeMoneyLine") or o.get("HomeTeamMoneyLine")
+        ml_away = o.get("AwayMoneyLine") or o.get("AwayTeamMoneyLine")
+
+        # Ajustamos para que el LOCAL de la app sea consistente
+        if home_norm in cand_local:
+            # El home de la API es tu LOCAL
             ml_local = ml_home
             ml_visita = ml_away
             spread_local = spread
         else:
+            # El home de la API es tu VISITA
             ml_local = ml_away
             ml_visita = ml_home
             spread_local = -spread if spread is not None else 0.0
