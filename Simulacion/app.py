@@ -35,7 +35,7 @@ NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStat
 NFL_GAMEODDS_WEEK_BASE = "https://api.sportsdata.io/api/nfl/odds/json/GameOddsByWeek"
 
 # NBA Standings (SCORES v3)
-NBA_STANDINGS_URL = "https://api.sportsdata.io/v3/nba/scores/json/Standings/2025"
+NBA_STANDINGS_URL = "https://api.sportsdata.io/v3/nba/scores/json/TeamSeasonStats/2027?key=0d1d5d0c77a74544b94b4284cd4b29da"
 
 # =========================================================
 # HELPERS GENERALES
