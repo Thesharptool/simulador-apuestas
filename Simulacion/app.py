@@ -26,7 +26,7 @@ API_NBA_SCORES_KEY = "0d1d5d0c77a74544b94b4284cd4b29da"          # <<--- pega aq
 API_NFL_KEY = "cbec1d58513c4c658168cedce52a8a08"  # NFL Odds Season Pass
 
 NFL_SEASON_LABEL = "2025REG"
-NBA_SEASON_YEAR = "2025"
+NBA_SEASON_YEAR = "2027"
 
 # NFL Team stats (ODDS)
 NFL_TEAMSEASON_URL = "https://api.sportsdata.io/api/nfl/odds/json/TeamSeasonStats/2025REG"
